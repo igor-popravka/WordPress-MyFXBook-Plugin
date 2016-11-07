@@ -13,6 +13,7 @@ $wdip_myfxbook_error_graph = __('<p class="description"><i>Failed to get graph!<
  */
 function wip_myfxbook_deactivation() {
     unregister_setting('myfxbook', 'wdip_myfxbook_options');
+    delete_option('wdip_myfxbook_options');
 }
 
 /**
