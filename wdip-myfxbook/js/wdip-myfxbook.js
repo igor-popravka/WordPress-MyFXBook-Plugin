@@ -6,13 +6,8 @@ jQuery(document).ready(function ($) {
         var graph_error = $(wdip_myfxbook_notify.graph_error);
         if (!$.isEmptyObject(wdip_myfxbook_daily_gain)) {
             var BarData = google.visualization.arrayToDataTable(wdip_myfxbook_daily_gain);
-            var BarOptions = {
-                chart: {
-                    height: 400
-                }
-            };
             var BarChart = new google.charts.Bar($('#wdip-myfxbook-daily-gain')[0]);
-            BarChart.draw(BarData, BarOptions);
+            BarChart.draw(BarData);
         } else {
             $('#wdip-myfxbook-data-daily').html(graph_error);
         }
@@ -21,12 +16,7 @@ jQuery(document).ready(function ($) {
             var ColumnChartData = google.visualization.arrayToDataTable(wdip_myfxbook_data_daily);
             var ColumnChartView = new google.visualization.DataView(ColumnChartData);
             var ColumnChart = new google.visualization.ColumnChart($('#wdip-myfxbook-data-daily')[0]);
-            var ColumnChartOptions = {
-                chart: {
-                    height: 400
-                }
-            };
-            ColumnChart.draw(ColumnChartView, ColumnChartOptions);
+            ColumnChart.draw(ColumnChartView);
         } else {
             $('#wdip-myfxbook-data-daily').html(graph_error);
         }

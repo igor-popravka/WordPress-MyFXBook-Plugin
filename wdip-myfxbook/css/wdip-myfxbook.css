@@ -1,0 +1,34 @@
+.wdip-myfxbook.graph-wrap {
+    width: 100%;
+    height: auto;
+}
+
+.wdip-myfxbook.graph-wrap .graph {
+    float: left;
+    width: 31.33%;
+    margin: 1% 1% 20px;
+}
+
+/* Medium Devices, Desktops */
+@media only screen and (max-width: 992px) {
+    .wdip-myfxbook.graph-wrap .graph {
+        max-width: none;
+        width: 100%;
+    }
+}
+
+/* Small Devices, Tablets */
+@media only screen and (max-width: 768px) {
+    .wdip-myfxbook.graph-wrap .graph {
+        max-width: none;
+        width: 100%;
+    }
+}
+
+/* Extra Small Devices, Phones */
+@media only screen and (max-width: 480px) {
+    .wdip-myfxbook.graph-wrap .graph {
+        max-width: none;
+        width: 100%;
+    }
+}
