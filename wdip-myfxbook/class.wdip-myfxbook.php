@@ -17,15 +17,8 @@ class MyFXBook {
     const OPTIONS_WIDGET = 'widget_options';
     const OPTIONS_DATADAILY = 'datadaily_options';
 
-    const OPTIONS_LIST = [
-        self::OPTIONS_REGISTRATION,
-        self::OPTIONS_GENERAL,
-        self::OPTIONS_DAILYGAIN,
-        self::OPTIONS_WIDGET,
-        self::OPTIONS_DATADAILY,
-    ];
-
-    const SHORTCODE = '[myfxbook]';
+    const PAGE_HOOK = 1;
+    const SHORTCODE_HOOK = 2;
 
     private static $instance;
 
@@ -45,8 +38,12 @@ class MyFXBook {
             add_action('admin_init', $this->getCallback('settings_init'));
         } else {
             add_action('wp_enqueue_scripts', $this->getCallback('enqueue_scripts'));
-            add_shortcode(trim(self::SHORTCODE, '[]'), $this->getCallback('shortcode_hook'));
-            add_filter('the_content', $this->getCallback('content_hook'));
+            if ($this->isShortCode()) {
+                $options = get_option(self::OPTIONS_GENERAL);
+                add_shortcode(trim($options['page_hook_field'], '[] '), $this->getCallback('shortcode_hook'));
+            } else {
+                add_filter('the_content', $this->getCallback('content_hook'));
+            }
         }
     }
 
@@ -67,7 +64,16 @@ class MyFXBook {
 
     public function shortcode_hook($atts = [], $content = null) {
         if (!$this->isShortCode()) return '';
-        return $content . $this->graph_view();
+        $header = '<p>&nbsp;</p>>';
+        if(!empty($atts['title'])){
+            $header .= "<h1>{$atts['title']}</h1>";
+        }
+
+        if(!empty($atts['description'])){
+            $header .= "<h4>{$atts['description']}</h4>";
+        }
+
+        return $header . $content . $this->graph_view();
     }
 
     public function enqueue_scripts() {
@@ -158,8 +164,23 @@ class MyFXBook {
             self::OPTIONS_PAGE
         );
         add_settings_field(
+            'page_hook_type_field',
+            __('Page hook type', self::OPTIONS_PAGE),
+            $this->getCallback('field_content'),
+            self::OPTIONS_PAGE,
+            'general_section',
+            [
+                'label_for' => 'page_hook_type_field',
+                'tag' => 'radio',
+                'type' => 'radio',
+                'description' => "Choose hook type where will be display the graphs.",
+                'options_name' => self::OPTIONS_GENERAL,
+                'default_value' => 1
+            ]
+        );
+        add_settings_field(
             'page_hook_field',
-            __('Page hook', self::OPTIONS_PAGE),
+            __('Page hook value', self::OPTIONS_PAGE),
             $this->getCallback('field_content'),
             self::OPTIONS_PAGE,
             'general_section',
@@ -167,7 +188,7 @@ class MyFXBook {
                 'label_for' => 'page_hook_field',
                 'tag' => 'input',
                 'type' => 'text',
-                'description' => "Enter full a page url (\"http://www.your-site/page\") or enter the shortcode name \"[myfxbook]\" (with square brackets) where will be display the graphs.",
+                'description' => "Enter full a page url (\"http://www.your-site/page\") if checked \"Page URI\" type\nOr enter the shortcode name \"my_shortcode_name\".",
                 'options_name' => self::OPTIONS_GENERAL
             ]
         );
@@ -246,6 +267,20 @@ class MyFXBook {
                 </select>
                 <?php
                 break;
+            case 'radio':
+                ?>
+                <input id="<?= esc_attr($label_for) . '-1'; ?>" type="<?= esc_attr($args['type']); ?>"
+                       name="<?= sprintf('%s[%s]', $name, esc_attr($label_for)); ?>"
+                       value="1" <?= $value == 1 ? 'checked' : ''; ?>/>
+                <label for="<?= esc_attr($label_for) . '-1'; ?>"
+                       style="margin-right: 60px;"><?= __('Page URI') ?></label>&nbsp;
+                <input id="<?= esc_attr($label_for) . '-2'; ?>" type="<?= esc_attr($args['type']); ?>"
+                       name="<?= sprintf('%s[%s]', $name, esc_attr($label_for)); ?>"
+                       value="2" <?= $value == 2 ? 'checked' : ''; ?>/>
+                <label for="<?= esc_attr($label_for) . '-2'; ?>"><?= __('Shortcode') ?></label>
+
+                <?php
+                break;
             case 'input':
             default:
                 ?>
@@ -282,7 +317,6 @@ class MyFXBook {
         delete_option(self::OPTIONS_DAILYGAIN);
         delete_option(self::OPTIONS_WIDGET);
         delete_option(self::OPTIONS_DATADAILY);
-        error_log('ok');
     }
 
     private function init_graph_settings() {
@@ -496,7 +530,7 @@ class MyFXBook {
 
     private function isShortCode() {
         $options = get_option(self::OPTIONS_GENERAL);
-        return $options['page_hook_field'] == self::SHORTCODE;
+        return $options['page_hook_type_field'] == self::SHORTCODE_HOOK;
     }
 
     private function graph_view() {
@@ -504,21 +538,24 @@ class MyFXBook {
         $op_dg = get_option(self::OPTIONS_DAILYGAIN);
         $op_wg = get_option(self::OPTIONS_WIDGET);
         $op_dd = get_option(self::OPTIONS_DATADAILY);
+        $widget = '';
 
-        $widget = (!empty($op_rg['api_session']) && !empty($op_wg['wg_account_field'])) ? sprintf('<img style="user-select: none; cursor: zoom-in;" src="https://www.myfxbook.com/api/get-custom-widget.png?%s" />', build_query([
-            'session' => $op_rg['api_session'],
-            'id' => $op_wg['wg_account_field'],
-            'bgColor' => 'ffffff',
-            'chartbgc' => 'ffffff',
-            'gridColor' => 'BDBDBD',
-            'lineColor' => '00CB05',
-            'barColor' => 'FF8D0A',
-            'fontColor' => '000000',
-            'bart' => 1,
-            'linet' => 0,
-            'title' => '',
-            'titles' => 20,
-        ])) : '';
+        if(is_array($op_wg)){
+            $widget = (!empty($op_rg['api_session']) && !empty($op_wg['wg_account_field'])) ? sprintf('<img style="user-select: none; cursor: zoom-in;" src="https://www.myfxbook.com/api/get-custom-widget.png?%s" />', build_query([
+                'session' => $op_rg['api_session'],
+                'id' => $op_wg['wg_account_field'],
+                'bgColor' => 'ffffff',
+                'chartbgc' => 'ffffff',
+                'gridColor' => 'BDBDBD',
+                'lineColor' => '00CB05',
+                'barColor' => 'FF8D0A',
+                'fontColor' => '000000',
+                'bart' => 1,
+                'linet' => 0,
+                'title' => '',
+                'titles' => 20,
+            ])) : '';
+        }
 
         ob_start();
         ?>
@@ -556,20 +593,22 @@ class MyFXBook {
         $op_dg = get_option(self::OPTIONS_DAILYGAIN);
         $table = [];
 
-        $result = $this->requestAPI('get-daily-gain.json', [
-            'session' => $op_rg['api_session'],
-            'id' => $op_dg['dg_account_field'],
-            'start' => $op_dg['dg_start_field'],
-            'end' => $op_dg['dg_end_field']
-        ]);
+        if(is_array($op_dg)){
+            $result = $this->requestAPI('get-daily-gain.json', [
+                'session' => $op_rg['api_session'],
+                'id' => $op_dg['dg_account_field'],
+                'start' => $op_dg['dg_start_field'],
+                'end' => $op_dg['dg_end_field']
+            ]);
 
-        if (!empty($result->dailyGain)) {
-            foreach ($result->dailyGain as $item) {
-                $item = (array)array_shift($item);
-                if (empty($table)) {
-                    $table[] = array_map('ucfirst', array_keys($item));
+            if (!empty($result->dailyGain)) {
+                foreach ($result->dailyGain as $item) {
+                    $item = (array)array_shift($item);
+                    if (empty($table)) {
+                        $table[] = array_map('ucfirst', array_keys($item));
+                    }
+                    $table[] = array_values($item);
                 }
-                $table[] = array_values($item);
             }
         }
 
@@ -581,20 +620,22 @@ class MyFXBook {
         $op_dd = get_option(self::OPTIONS_DATADAILY);
         $table = [];
 
-        $result = $this->requestAPI('get-data-daily.json', [
-            'session' => $op_rg['api_session'],
-            'id' => $op_dd['dd_account_field'],
-            'start' => $op_dd['dd_start_field'],
-            'end' => $op_dd['dd_end_field']
-        ]);
+        if(is_array($op_dd)){
+            $result = $this->requestAPI('get-data-daily.json', [
+                'session' => $op_rg['api_session'],
+                'id' => $op_dd['dd_account_field'],
+                'start' => $op_dd['dd_start_field'],
+                'end' => $op_dd['dd_end_field']
+            ]);
 
-        if (!empty($result->dataDaily)) {
-            foreach ($result->dataDaily as $item) {
-                $item = (array)array_shift($item);
-                if (empty($table)) {
-                    $table[] = array_map('ucfirst', ['date', 'balance', 'pips', 'lots']);
+            if (!empty($result->dataDaily)) {
+                foreach ($result->dataDaily as $item) {
+                    $item = (array)array_shift($item);
+                    if (empty($table)) {
+                        $table[] = array_map('ucfirst', ['date', 'balance', 'pips', 'lots']);
+                    }
+                    $table[] = [$item['date'], $item['balance'], $item['pips'], $item['lots']];
                 }
-                $table[] = [$item['date'], $item['balance'], $item['pips'], $item['lots']];
             }
         }
         return $table;
