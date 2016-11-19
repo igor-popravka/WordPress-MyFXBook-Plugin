@@ -2,6 +2,72 @@
     padding-left: 40px;
 }
 
+/* Medium Devices, Desktops */
+@media only screen and (max-width: 992px) {
+    .wdip-myfxbook {
+        max-width: none;
+        width: 100%;
+    }
+
+    .wdip-myfxbook .filter{
+        padding-left: 2%;
+        width: 100%;
+    }
+
+    .wdip-myfxbook .google-visualization-controls-label{
+        display: none;
+    }
+
+    .wdip-myfxbook .google-visualization-controls-slider-horizontal{
+        max-width: none;
+        width: 50%;
+    }
+}
+
+/* Small Devices, Tablets */
+@media only screen and (max-width: 768px) {
+    .wdip-myfxbook {
+        max-width: none;
+        width: 100%;
+    }
+
+    .wdip-myfxbook .filter{
+        padding-left: 2%;
+        width: 100%;
+    }
+
+    .wdip-myfxbook .google-visualization-controls-label{
+        display: none;
+    }
+
+    .wdip-myfxbook .google-visualization-controls-slider-horizontal{
+        max-width: none;
+        width: 50%;
+    }
+}
+
+/* Extra Small Devices, Phones */
+@media only screen and (max-width: 480px) {
+    .wdip-myfxbook {
+        max-width: none;
+        width: 100%;
+    }
+
+    .wdip-myfxbook .filter{
+        padding-left: 2%;
+        width: 100%;
+    }
+
+    .wdip-myfxbook .google-visualization-controls-label{
+        display: none;
+    }
+
+    .wdip-myfxbook .google-visualization-controls-slider-horizontal{
+        max-width: none;
+        width: 50%;
+    }
+}
+
 .generation-fields {
     float: left;
     width: 48%;
