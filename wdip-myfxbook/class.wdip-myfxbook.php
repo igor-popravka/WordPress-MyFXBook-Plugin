@@ -1,5 +1,4 @@
 <?php
-namespace WDIP\Plugin;
 
 /**
  * @author: igor.popravka
@@ -7,18 +6,11 @@ namespace WDIP\Plugin;
  * Date: 09.11.2016
  * Time: 14:32
  */
-class MyFXBook {
+class WDIP_MyFXBook_Plugin {
     const OPTIONS_GROUP = 'wdip-myfxbook-group';
     const OPTIONS_PAGE = 'wdip-myfxbook-page';
-
-    const OPTIONS_REGISTRATION = 'registration_options';
-    const OPTIONS_GENERAL = 'general_options';
-    const OPTIONS_DAILYGAIN = 'dailygain_options';
-    const OPTIONS_WIDGET = 'widget_options';
-    const OPTIONS_DATADAILY = 'datadaily_options';
-
-    const PAGE_HOOK = 1;
-    const SHORTCODE_HOOK = 2;
+    const OPTIONS_NAME = 'options_name';
+    const SHORT_CODE_NAME = 'myfxbook';
 
     private static $instance;
 
@@ -34,60 +26,139 @@ class MyFXBook {
 
     public function init() {
         if (is_admin()) {
-            add_action('admin_menu', $this->getCallback('admin_menu'));
-            add_action('admin_init', $this->getCallback('settings_init'));
+            add_action('admin_menu', $this->getCallback('initAdminMenu'));
+            add_action('admin_init', $this->getCallback('initSettings'));
+            add_action('admin_enqueue_scripts', $this->getCallback('initAdminEnqueueScripts'));
         } else {
-            add_action('wp_enqueue_scripts', $this->getCallback('enqueue_scripts'));
-            if ($this->isShortCode()) {
-                $options = get_option(self::OPTIONS_GENERAL);
-                add_shortcode(trim($options['page_hook_field'], '[] '), $this->getCallback('shortcode_hook'));
-            } else {
-                add_filter('the_content', $this->getCallback('content_hook'));
-            }
+            add_action('wp_enqueue_scripts', $this->getCallback('initEnqueueScripts'));
+            add_shortcode(self::SHORT_CODE_NAME, $this->getCallback('applyShortCode'));
         }
     }
 
-    public function admin_menu() {
+    public function initAdminMenu() {
         add_options_page(
             __('My FX Book Settings'),
             'MyFXBook',
             8,
             self::OPTIONS_PAGE,
-            $this->getCallback('options_page')
+            $this->getCallback('renderOptionsPage')
         );
     }
 
-    public function content_hook($content) {
-        if (!$this->canView()) return $content;
-        return $content . $this->graph_view();
-    }
+    public function applyShortCode($attr = [], $content = null) {
+        if (!isset($attr['method']) || !isset($attr['id'])) return $content;
 
-    public function shortcode_hook($atts = [], $content = null) {
-        if (!$this->isShortCode()) return '';
-        $header = '<p>&nbsp;</p>>';
-        if(!empty($atts['title'])){
-            $header .= "<h1>{$atts['title']}</h1>";
+        $chart = isset($attr['chart']) ? ucfirst($attr['chart']) . 'Chart' : 'LineChart';
+        $id = md5("{$attr['method']}-{$attr['id']}-{$chart}");
+        $options = ['hAxis' => ['format' => 'MMM, yy',], 'vAxis' => []];
+        foreach (['title', 'height', 'width', 'bgcolor', 'fontsize', 'gridcolor'] as $nm) {
+            if (isset($attr[$nm])) {
+                switch ($nm) {
+                    case 'bgcolor':
+                        $options['backgroundColor'] = $attr[$nm];
+                        break;
+                    case 'gridcolor':
+                        $options['hAxis']['gridlines'] = ['color' => $attr[$nm]];
+                        $options['vAxis']['gridlines'] = ['color' => $attr[$nm]];
+                        break;
+                    default:
+                        $options[$nm] = $attr[$nm];
+                }
+            }
         }
 
-        if(!empty($atts['description'])){
-            $header .= "<h4>{$atts['description']}</h4>";
+        if ($attr['chart'] == 'column') {
+            $options['isStacked'] = true;
+            $options['legend'] = ['position' => 'top', 'maxLines' => 2];
         }
 
-        return $header . $content . $this->graph_view();
+        $style = '';
+        foreach (['height', 'width', 'bgcolor'] as $nm) {
+            if (isset($attr[$nm])) {
+                switch ($nm) {
+                    case 'bgcolor':
+                        $style .= "background-color:{$attr[$nm]}; ";
+                        break;
+                    default:
+                        $style .= "{$nm}:{$attr[$nm]}px; ";
+                }
+            }
+        }
+
+        ob_start();
+
+        echo $content;
+
+        switch ($attr['method']) {
+            case 'get-daily-gain':
+            case 'get-data-daily':
+                $data = $attr['method'] == 'get-daily-gain' ? $this->getDataDailyGain($attr['id']) : $this->getDataDaily($attr['id']);
+                ?>
+                <div id="<?= $id; ?>" class="wdip-myfxbook" style="<?= $style; ?>">
+                    <div id="filter-<?= $id; ?>" class="filter"></div>
+                    <div id="chart-<?= $id; ?>"></div>
+                </div>
+                <script>
+                    /* <![CDATA[ */
+                    if (typeof wdip_myfxbook_options == 'undefined') {
+                        var wdip_myfxbook_options = [];
+                    }
+
+                    wdip_myfxbook_options.push({
+                        chart: "<?= $chart; ?>",
+                        id: "<?= $id; ?>",
+                        data: function ($) {
+                            var dt = <?= json_encode($data); ?>;
+                            $(dt.rows).each(function (i, r) {
+                                r.c[0].v = new Date(r.c[0].v);
+                                dt.rows[i] = r;
+                            });
+                            return dt;
+                        },
+                        options: <?= json_encode($options); ?>
+                    });
+                    /* ]]> */
+                </script>
+                <?php
+
+                break;
+            case 'get-custom-widget':
+                $op_rg = get_option(self::OPTIONS_NAME);
+
+                echo (!empty($op_rg['api_session']) && !empty($attr['id'])) ? sprintf('<img style="user-select: none; cursor: zoom-in;" src="https://www.myfxbook.com/api/get-custom-widget.png?%s" />', build_query([
+                    'session' => $op_rg['api_session'],
+                    'id' => $attr['id'],
+                    'width' => isset($attr['width']) ? intval($attr['width']) : null,
+                    'height' => isset($attr['height']) ? intval($attr['height']) : null,
+                    'bgColor' => isset($attr['bgcolor']) ? trim($attr['bgcolor'], '#') : 'ffffff',
+                    'chartbgc' => isset($attr['bgcolor']) ? trim($attr['bgcolor'], '#') : 'ffffff',
+                    'gridColor' => isset($attr['gridcolor']) ? trim($attr['gridcolor'], '#') : 'BDBDBD',
+                    'lineColor' => '00CB05',
+                    'barColor' => 'FF8D0A',
+                    'fontColor' => '000000',
+                    'bart' => 1,
+                    'linet' => 0,
+                    'title' => isset($attr['title']) ? $attr['title'] : '',
+                    'titles' => 20,
+                ])) : '';
+
+        }
+
+        return ob_get_clean();
     }
 
-    public function enqueue_scripts() {
+    public function initEnqueueScripts() {
         wp_enqueue_script('google-charts', 'https://www.gstatic.com/charts/loader.js');
         wp_enqueue_script('wdip-myfxbook', plugins_url('/js/wdip-myfxbook.js', __FILE__), ['jquery', 'google-charts']);
-
-        wp_localize_script('wdip-myfxbook', 'wdip_myfxbook_daily_gain', $this->localize_dailygain_graph());
-        wp_localize_script('wdip-myfxbook', 'wdip_myfxbook_data_daily', $this->localize_datadaily_graph());
-        wp_localize_script('wdip-myfxbook', 'wdip_myfxbook_notify', ['graph_error' => __('<p class="description"><i>Failed to get graph!</i></p>', self::OPTIONS_PAGE)]);
-
         wp_enqueue_style('wdip-myfxbook', plugins_url('/css/wdip-myfxbook.css', __FILE__));
     }
 
-    public function options_page() {
+    public function initAdminEnqueueScripts() {
+        wp_enqueue_script('wdip-myfxbook', plugins_url('/js/wdip-myfxbook.admin.js', __FILE__), ['jquery']);
+        wp_enqueue_style('wdip-myfxbook', plugins_url('/css/wdip-myfxbook.css', __FILE__));
+    }
+
+    public function renderOptionsPage() {
         if (!current_user_can('manage_options')) return;
         ?>
         <div class="wrap">
@@ -109,94 +180,133 @@ class MyFXBook {
                 submit_button('Save Settings');
                 ?>
             </form>
+            <?
+            $options = get_option(self::OPTIONS_NAME);
+            $acc_list = $options['accounts_list'];
+
+            if ($this->isSessionSet()):
+                ?>
+                <h1>SortCode Generator</h1>
+                <div class="generation-fields">
+                    <fieldset>
+                        <legend>Attributes</legend>
+                        <p>
+                            <label for="account-list"><span>*</span> Account:</label>
+                            <select name="id" id="account-list" class="attr-field">
+                                <? foreach ($acc_list as $title => $value) : ?>
+                                    <option value="<?= $value; ?>"><?= $title; ?></option>
+                                <? endforeach; ?>
+                            </select>
+                        </p>
+                        <p>
+                            <label for="method-list"><span>*</span> Method:</label>
+                            <select name="method" id="method-list" class="attr-field">
+                                <option value="get-daily-gain">Get Daily Gain</option>
+                                <option value="get-custom-widget">Get Custom widget</option>
+                                <option value="get-data-daily">Get Data Daily</option>
+                            </select>
+                        </p>
+                        <p>
+                            <label for="chart-list">Chart type:</label>
+                            <select name="chart" id="chart-list" class="attr-field">
+                                <option value="line">Line</option>
+                                <option value="column">Column</option>
+                            </select>
+                        </p>
+                        <p>
+                            <label for="title">Title:</label>
+                            <input name="title" id="title" type="text" value="" class="attr-field"/>
+                        </p>
+                        <p>
+                            <label for="height">Height:</label>
+                            <input name="height" id="height" type="text" value="" class="attr-field"/>
+                        </p>
+                        <p>
+                            <label for="width">Width:</label>
+                            <input name="width" id="width" type="text" value="" class="attr-field"/>
+                        </p>
+                        <p>
+                            <label for="bgcolor">Background color:</label>
+                            <input name="bgcolor" id="bgcolor" type="text" value="" class="attr-field"/>
+                        </p>
+                        <p>
+                            <label for="gridcolor">Grid color:</label>
+                            <input name="gridcolor" id="gridColor" type="text" value="" class="attr-field"/>
+                        </p>
+                        <p>
+                            <label for="fontsize">Font size:</label>
+                            <input name="fontsize" id="fontsize" type="text" value="" class="attr-field"/>
+                        </p>
+                    </fieldset>
+                </div>
+                <div class="generation-result">
+                    <fieldset>
+                        <legend>Result</legend>
+                        <p>
+                            <textarea id="result"></textarea>
+                        </p>
+                    </fieldset>
+                </div>
+                <div class="generation-action wp-core-ui">
+                    <p>
+                        <button class="button button-secondary">Generate</button>
+                    <hr/>
+                    </p>
+                </div>
+            <? endif; ?>
         </div>
         <?php
     }
 
-    public function settings_init() {
-        $this->register_settings();
+    public function initSettings() {
+        register_setting(
+            self::OPTIONS_GROUP,
+            self::OPTIONS_NAME,
+            $this->getCallback('validOptionsData')
+        );
+
+        $section_code = 'options_sections';
 
         /**
          * registration section
          */
         add_settings_section(
-            'registration_section',
+            $section_code,
             __('Account Registration Data', self::OPTIONS_PAGE),
-            $this->getCallback('section_content'),
+            $this->getCallback('renderOptionsNotify'),
             self::OPTIONS_PAGE
         );
         add_settings_field(
             'login_field',
             __('Login', self::OPTIONS_PAGE),
-            $this->getCallback('field_content'),
+            $this->getCallback('renderOptionsField'),
             self::OPTIONS_PAGE,
-            'registration_section',
+            $section_code,
             [
                 'label_for' => 'login_field',
                 'tag' => 'input',
                 'type' => 'text',
                 'description' => 'Enter your a login. It will be used only to authorization in API',
-                'options_name' => self::OPTIONS_REGISTRATION
+                'options_name' => self::OPTIONS_NAME
             ]
         );
         add_settings_field(
             'password_field',
             __('Password', self::OPTIONS_PAGE),
-            $this->getCallback('field_content'),
+            $this->getCallback('renderOptionsField'),
             self::OPTIONS_PAGE,
-            'registration_section',
+            $section_code,
             [
                 'label_for' => 'password_field',
                 'tag' => 'input',
                 'type' => 'password',
                 'description' => 'Enter your a password. It will be used only to authorization in API',
-                'options_name' => self::OPTIONS_REGISTRATION
+                'options_name' => self::OPTIONS_NAME
             ]
         );
-
-        /**
-         * general section
-         */
-        add_settings_section(
-            'general_section',
-            __('General Plugin Settings', self::OPTIONS_PAGE),
-            $this->getCallback('section_content'),
-            self::OPTIONS_PAGE
-        );
-        add_settings_field(
-            'page_hook_type_field',
-            __('Page hook type', self::OPTIONS_PAGE),
-            $this->getCallback('field_content'),
-            self::OPTIONS_PAGE,
-            'general_section',
-            [
-                'label_for' => 'page_hook_type_field',
-                'tag' => 'radio',
-                'type' => 'radio',
-                'description' => "Choose hook type where will be display the graphs.",
-                'options_name' => self::OPTIONS_GENERAL,
-                'default_value' => 1
-            ]
-        );
-        add_settings_field(
-            'page_hook_field',
-            __('Page hook value', self::OPTIONS_PAGE),
-            $this->getCallback('field_content'),
-            self::OPTIONS_PAGE,
-            'general_section',
-            [
-                'label_for' => 'page_hook_field',
-                'tag' => 'input',
-                'type' => 'text',
-                'description' => "Enter full a page url (\"http://www.your-site/page\") if checked \"Page URI\" type\nOr enter the shortcode name \"my_shortcode_name\".",
-                'options_name' => self::OPTIONS_GENERAL
-            ]
-        );
-
-        $this->init_graph_settings();
     }
 
-    public function registration_validation($options) {
+    public function validOptionsData($options) {
         $options['api_session'] = null;
         $options['accounts_list'] = [];
 
@@ -235,271 +345,34 @@ class MyFXBook {
         return $options;
     }
 
-    public function section_content($args) {
-        $notify = [
-            'registration_section' => 'Please fill following information about account registration onto <a href="https://www.myfxbook.com">https://www.myfxbook.com</a>',
-            'general_section' => 'Please fill general plugin settings',
-            'dailygain_section' => 'Please fill data for daily gain graph',
-            'widget_section' => 'Please fill data for custom account widget',
-            'datadaily_section' => 'Please fill data for data daily graph'
-        ];
-
+    public function renderOptionsNotify($args) {
+        $notify = __('Please fill following information about account registration onto <a href="https://www.myfxbook.com">https://www.myfxbook.com</a>', self::OPTIONS_PAGE);
         ?>
-        <p class="description"><?= isset($notify[$args['id']]) ? __($notify[$args['id']], self::OPTIONS_PAGE) : ''; ?></p>
+        <p class="description"><?= $notify; ?></p>
         <?php
     }
 
-    public function field_content($args) {
+    public function renderOptionsField($args) {
         $name = $args['options_name'];
         $label_for = $args['label_for'];
         $options = get_option($name);
         $value = !empty($options[$label_for]) ? $options[$label_for] : (isset($args['default_value']) ? $args['default_value'] : '');
 
-        switch ($args['tag']) {
-            case 'select':
-                ?>
-                <select id="<?= esc_attr($label_for); ?>"
-                        name="<?= sprintf('%s[%s]', $name, esc_attr($label_for)); ?>">
-                    <?php foreach ($args['options_list'] as $nm => $vl) : ?>
-                        <option
-                            value="<?= $vl; ?>"<?= ($value == $vl) ? 'selected' : ''; ?>><?= $nm; ?></option>
-                    <?php endforeach; ?>
-                </select>
-                <?php
-                break;
-            case 'radio':
-                ?>
-                <input id="<?= esc_attr($label_for) . '-1'; ?>" type="<?= esc_attr($args['type']); ?>"
-                       name="<?= sprintf('%s[%s]', $name, esc_attr($label_for)); ?>"
-                       value="1" <?= $value == 1 ? 'checked' : ''; ?>/>
-                <label for="<?= esc_attr($label_for) . '-1'; ?>"
-                       style="margin-right: 60px;"><?= __('Page URI') ?></label>&nbsp;
-                <input id="<?= esc_attr($label_for) . '-2'; ?>" type="<?= esc_attr($args['type']); ?>"
-                       name="<?= sprintf('%s[%s]', $name, esc_attr($label_for)); ?>"
-                       value="2" <?= $value == 2 ? 'checked' : ''; ?>/>
-                <label for="<?= esc_attr($label_for) . '-2'; ?>"><?= __('Shortcode') ?></label>
-
-                <?php
-                break;
-            case 'input':
-            default:
-                ?>
-                <input id="<?= esc_attr($label_for); ?>" type="<?= esc_attr($args['type']); ?>"
-                       name="<?= sprintf('%s[%s]', $name, esc_attr($label_for)); ?>"
-                       value="<?= $value; ?>"
-                >
-                <?php
-        }
-
         ?>
-        <p class="description">
-            <?= nl2br(__($args['description'], self::OPTIONS_PAGE)); ?>
-        </p>
+        <input id="<?= esc_attr($label_for); ?>" type="<?= esc_attr($args['type']); ?>"
+               name="<?= sprintf('%s[%s]', $name, esc_attr($label_for)); ?>"
+               value="<?= $value; ?>"
+        <div>
+            <p class="description">
+                <?= nl2br(__($args['description'], self::OPTIONS_PAGE)); ?>
+            </p>
+        </div>
         <?php
     }
 
-    private function register_settings() {
-        register_setting(self::OPTIONS_GROUP, self::OPTIONS_REGISTRATION, $this->getCallback('registration_validation'));
-        register_setting(self::OPTIONS_GROUP, self::OPTIONS_GENERAL);
-        register_setting(self::OPTIONS_GROUP, self::OPTIONS_DAILYGAIN);
-        register_setting(self::OPTIONS_GROUP, self::OPTIONS_WIDGET);
-        register_setting(self::OPTIONS_GROUP, self::OPTIONS_DATADAILY);
-    }
-
-    public function settings_deactivation() {
-        unregister_setting(self::OPTIONS_GROUP, self::OPTIONS_REGISTRATION);
-        unregister_setting(self::OPTIONS_GROUP, self::OPTIONS_GENERAL);
-        unregister_setting(self::OPTIONS_GROUP, self::OPTIONS_DAILYGAIN);
-        unregister_setting(self::OPTIONS_GROUP, self::OPTIONS_WIDGET);
-        unregister_setting(self::OPTIONS_GROUP, self::OPTIONS_DATADAILY);
-        delete_option(self::OPTIONS_REGISTRATION);
-        delete_option(self::OPTIONS_GENERAL);
-        delete_option(self::OPTIONS_DAILYGAIN);
-        delete_option(self::OPTIONS_WIDGET);
-        delete_option(self::OPTIONS_DATADAILY);
-    }
-
-    private function init_graph_settings() {
-        $options = get_option(self::OPTIONS_REGISTRATION);
-
-        if (empty($options['accounts_list'])) return;
-
-        /**
-         * Init settings for daily gain graph
-         */
-        add_settings_section(
-            'dailygain_section',
-            __('Daily Gain Graph Settings', self::OPTIONS_PAGE),
-            $this->getCallback('section_content'),
-            self::OPTIONS_PAGE
-        );
-        add_settings_field(
-            'dg_title_field',
-            __('Title', self::OPTIONS_PAGE),
-            $this->getCallback('field_content'),
-            self::OPTIONS_PAGE,
-            'dailygain_section',
-            [
-                'label_for' => 'dg_title_field',
-                'tag' => 'input',
-                'type' => 'text',
-                'description' => 'Enter the graph title',
-                'options_name' => self::OPTIONS_DAILYGAIN,
-                'default_value' => 'Daily gain'
-            ]
-        );
-        add_settings_field(
-            'dg_account_field',
-            __('Account', self::OPTIONS_PAGE),
-            $this->getCallback('field_content'),
-            self::OPTIONS_PAGE,
-            'dailygain_section',
-            [
-                'label_for' => 'dg_account_field',
-                'tag' => 'select',
-                'description' => 'Select your an account, which will be use to built the graph',
-                'options_list' => $options['accounts_list'],
-                'options_name' => self::OPTIONS_DAILYGAIN
-            ]
-        );
-        add_settings_field(
-            'dg_start_field',
-            __('Start date', self::OPTIONS_PAGE),
-            $this->getCallback('field_content'),
-            self::OPTIONS_PAGE,
-            'dailygain_section',
-            [
-                'label_for' => 'dg_start_field',
-                'tag' => 'input',
-                'type' => 'date',
-                'description' => 'Enter start date, which will use for filtering the account data',
-                'options_name' => self::OPTIONS_DAILYGAIN,
-                'default_value' => (new \DateTime())->modify('first day of previous month')->format('Y-m-d')
-            ]
-        );
-        add_settings_field(
-            'dg_end_field',
-            __('End date', self::OPTIONS_PAGE),
-            $this->getCallback('field_content'),
-            self::OPTIONS_PAGE,
-            'dailygain_section',
-            [
-                'label_for' => 'dg_end_field',
-                'tag' => 'input',
-                'type' => 'date',
-                'description' => 'Enter end date, which will use for filtering the account data',
-                'options_name' => self::OPTIONS_DAILYGAIN,
-                'default_value' => (new \DateTime())->modify('first day of this month')->format('Y-m-d')
-            ]
-        );
-
-        /**
-         * Init settings for custom widget
-         */
-        add_settings_section(
-            'widget_section',
-            __('MyFXBook Custom Widget Settings', self::OPTIONS_PAGE),
-            $this->getCallback('section_content'),
-            self::OPTIONS_PAGE
-        );
-        add_settings_field(
-            'wg_title_field',
-            __('Title', self::OPTIONS_PAGE),
-            $this->getCallback('field_content'),
-            self::OPTIONS_PAGE,
-            'widget_section',
-            [
-                'label_for' => 'wg_title_field',
-                'tag' => 'input',
-                'type' => 'text',
-                'description' => 'Enter the graph title',
-                'options_name' => self::OPTIONS_WIDGET,
-                'default_value' => 'Custom widget'
-            ]
-        );
-        add_settings_field(
-            'wg_account_field',
-            __('Account', self::OPTIONS_PAGE),
-            $this->getCallback('field_content'),
-            self::OPTIONS_PAGE,
-            'widget_section',
-            [
-                'label_for' => 'wg_account_field',
-                'tag' => 'select',
-                'description' => 'Select your an account, which will be use to built the widget',
-                'options_list' => $options['accounts_list'],
-                'options_name' => self::OPTIONS_WIDGET
-            ]
-        );
-
-        /**
-         * Init settings for data daily
-         */
-        add_settings_section(
-            'datadaily_section',
-            __('Data Daily Graph Settings', self::OPTIONS_PAGE),
-            $this->getCallback('section_content'),
-            self::OPTIONS_PAGE
-        );
-        add_settings_field(
-            'dd_title_field',
-            __('Title', self::OPTIONS_PAGE),
-            $this->getCallback('field_content'),
-            self::OPTIONS_PAGE,
-            'datadaily_section',
-            [
-                'label_for' => 'dd_title_field',
-                'tag' => 'input',
-                'type' => 'text',
-                'description' => 'Enter the graph title',
-                'options_name' => self::OPTIONS_DATADAILY,
-                'default_value' => 'Data daily'
-            ]
-        );
-        add_settings_field(
-            'dd_account_field',
-            __('Account', self::OPTIONS_PAGE),
-            $this->getCallback('field_content'),
-            self::OPTIONS_PAGE,
-            'datadaily_section',
-            [
-                'label_for' => 'dd_account_field',
-                'tag' => 'select',
-                'description' => 'Select your an account, which will be use to built the graph',
-                'options_list' => $options['accounts_list'],
-                'options_name' => self::OPTIONS_DATADAILY
-            ]
-        );
-        add_settings_field(
-            'dd_start_field',
-            __('Start date', self::OPTIONS_PAGE),
-            $this->getCallback('field_content'),
-            self::OPTIONS_PAGE,
-            'datadaily_section',
-            [
-                'label_for' => 'dd_start_field',
-                'tag' => 'input',
-                'type' => 'date',
-                'description' => 'Enter start date, which will use for filtering the account data',
-                'options_name' => self::OPTIONS_DATADAILY,
-                'default_value' => (new \DateTime())->modify('first day of previous month')->format('Y-m-d')
-            ]
-        );
-        add_settings_field(
-            'dd_end_field',
-            __('End date', self::OPTIONS_PAGE),
-            $this->getCallback('field_content'),
-            self::OPTIONS_PAGE,
-            'datadaily_section',
-            [
-                'label_for' => 'dd_end_field',
-                'tag' => 'input',
-                'type' => 'date',
-                'description' => 'Enter end date, which will use for filtering the account data',
-                'options_name' => self::OPTIONS_DATADAILY,
-                'default_value' => (new \DateTime())->modify('first day of this month')->format('Y-m-d')
-            ]
-        );
+    public function delSettings() {
+        unregister_setting(self::OPTIONS_GROUP, self::OPTIONS_NAME);
+        delete_option(self::OPTIONS_NAME);
     }
 
     public function getCallback($fun_name) {
@@ -528,116 +401,96 @@ class MyFXBook {
         return null;
     }
 
-    private function isShortCode() {
-        $options = get_option(self::OPTIONS_GENERAL);
-        return $options['page_hook_type_field'] == self::SHORTCODE_HOOK;
-    }
+    private function getDataDailyGain($id) {
+        static $table = [];
 
-    private function graph_view() {
-        $op_rg = get_option(self::OPTIONS_REGISTRATION);
-        $op_dg = get_option(self::OPTIONS_DAILYGAIN);
-        $op_wg = get_option(self::OPTIONS_WIDGET);
-        $op_dd = get_option(self::OPTIONS_DATADAILY);
-        $widget = '';
-
-        if(is_array($op_wg)){
-            $widget = (!empty($op_rg['api_session']) && !empty($op_wg['wg_account_field'])) ? sprintf('<img style="user-select: none; cursor: zoom-in;" src="https://www.myfxbook.com/api/get-custom-widget.png?%s" />', build_query([
-                'session' => $op_rg['api_session'],
-                'id' => $op_wg['wg_account_field'],
-                'bgColor' => 'ffffff',
-                'chartbgc' => 'ffffff',
-                'gridColor' => 'BDBDBD',
-                'lineColor' => '00CB05',
-                'barColor' => 'FF8D0A',
-                'fontColor' => '000000',
-                'bart' => 1,
-                'linet' => 0,
-                'title' => '',
-                'titles' => 20,
-            ])) : '';
-        }
-
-        ob_start();
-        ?>
-        <div class="wdip-myfxbook graph-wrap">
-            <div class="graph">
-                <h3 class="title"><?= __($op_dg['dg_title_field']); ?></h3>
-                <div id="wdip-myfxbook-daily-gain"></div>
-            </div>
-            <div class="graph">
-                <h3 class="title"><?= __($op_wg['wg_title_field']); ?></h3>
-                <div id="wdip-myfxbook-custom-widget">
-                    <?= $widget; ?>
-                </div>
-            </div>
-            <div class="graph">
-                <h3 class="title"><?= __($op_dd['dd_title_field']); ?></h3>
-                <div id="wdip-myfxbook-data-daily"></div>
-            </div>
-        </div>
-        <?php
-
-        return ob_get_clean();
-    }
-
-    private function canView() {
-        $options = get_option(self::OPTIONS_GENERAL);
-        if (preg_match("/(?:http:\/\/|https:\/\/)?(.+)/i", $options['page_hook_field'], $match)) {
-            return trim($match[1], '/') == trim($_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'], '/');
-        }
-        return false;
-    }
-
-    private function localize_dailygain_graph() {
-        $op_rg = get_option(self::OPTIONS_REGISTRATION);
-        $op_dg = get_option(self::OPTIONS_DAILYGAIN);
-        $table = [];
-
-        if(is_array($op_dg)){
+        if (!isset($table[$id])) {
+            $table[$id] = [];
+            $op_rg = get_option(self::OPTIONS_NAME);
             $result = $this->requestAPI('get-daily-gain.json', [
                 'session' => $op_rg['api_session'],
-                'id' => $op_dg['dg_account_field'],
-                'start' => $op_dg['dg_start_field'],
-                'end' => $op_dg['dg_end_field']
+                'id' => $id,
+                'start' => '0-0-0',
+                'end' => (new \DateTime())->format('Y-m-d')
             ]);
+
+            $table[$id] = [
+                'cols' => [
+                    ['id' => 'date', 'label' => 'Date', 'type' => 'date'],
+                    ['id' => 'value', 'label' => 'Value', 'type' => 'number'],
+                    ['id' => 'profit', 'label' => 'Profit', 'type' => 'number'],
+                ],
+                'rows' => []
+            ];
 
             if (!empty($result->dailyGain)) {
-                foreach ($result->dailyGain as $item) {
-                    $item = (array)array_shift($item);
-                    if (empty($table)) {
-                        $table[] = array_map('ucfirst', array_keys($item));
-                    }
-                    $table[] = array_values($item);
+                $daily_gain = array_map(function ($i) {
+                    return $i[0];
+                }, $result->dailyGain);
+
+                foreach ($daily_gain as $item) {
+                    $table[$id]['rows'][] = [
+                        'c' => [
+                            ['v' => $item->date],
+                            ['v' => floatval($item->value)],
+                            ['v' => floatval($item->profit)]
+                        ]
+                    ];
                 }
             }
         }
 
-        return $table;
+        return $table[$id];
     }
 
-    private function localize_datadaily_graph() {
-        $op_rg = get_option(self::OPTIONS_REGISTRATION);
-        $op_dd = get_option(self::OPTIONS_DATADAILY);
-        $table = [];
+    private function getDataDaily($id) {
+        static $table = [];
 
-        if(is_array($op_dd)){
+        if (!isset($table[$id])) {
+            $table[$id] = [];
+            $op_rg = get_option(self::OPTIONS_NAME);
             $result = $this->requestAPI('get-data-daily.json', [
                 'session' => $op_rg['api_session'],
-                'id' => $op_dd['dd_account_field'],
-                'start' => $op_dd['dd_start_field'],
-                'end' => $op_dd['dd_end_field']
+                'id' => $id,
+                'start' => '0-0-0',
+                'end' => (new \DateTime())->format('Y-m-d')
             ]);
 
+            $table[$id] = [
+                'cols' => [
+                    ['id' => 'date', 'label' => 'Date', 'type' => 'date'],
+                    ['id' => 'balance', 'label' => 'Balance', 'type' => 'number'],
+                    ['id' => 'profit', 'label' => 'Profit', 'type' => 'number'],
+                    ['id' => 'pips', 'label' => 'Pips', 'type' => 'number'],
+                    ['id' => 'lots', 'label' => 'Lots', 'type' => 'number']
+                ],
+                'rows' => []
+            ];
+
             if (!empty($result->dataDaily)) {
-                foreach ($result->dataDaily as $item) {
-                    $item = (array)array_shift($item);
-                    if (empty($table)) {
-                        $table[] = array_map('ucfirst', ['date', 'balance', 'pips', 'lots']);
-                    }
-                    $table[] = [$item['date'], $item['balance'], $item['pips'], $item['lots']];
+                $daily_gain = array_map(function ($i) {
+                    return $i[0];
+                }, $result->dataDaily);
+
+                foreach ($daily_gain as $item) {
+                    $table[$id]['rows'][] = [
+                        'c' => [
+                            ['v' => $item->date],
+                            ['v' => floatval($item->balance)],
+                            ['v' => floatval($item->profit)],
+                            ['v' => floatval($item->pips)],
+                            ['v' => floatval($item->lots)]
+                        ]
+                    ];
                 }
             }
         }
-        return $table;
+
+        return $table[$id];
+    }
+
+    private function isSessionSet() {
+        $options = get_option(self::OPTIONS_NAME);
+        return !empty($options['api_session']);
     }
 }
