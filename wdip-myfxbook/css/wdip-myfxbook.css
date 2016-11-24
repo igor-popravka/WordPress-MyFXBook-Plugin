@@ -1,70 +1,30 @@
-.wdip-myfxbook .filter {
-    padding-left: 40px;
+.wdip-myfxbook-chart .chart-range-control {
+    margin: 20px 0 20px 40px;
 }
 
-/* Medium Devices, Desktops */
-@media only screen and (max-width: 992px) {
-    .wdip-myfxbook {
-        max-width: none;
-        width: 100%;
-    }
-
-    .wdip-myfxbook .filter{
-        padding-left: 2%;
-        width: 100%;
-    }
-
-    .wdip-myfxbook .google-visualization-controls-label{
-        display: none;
-    }
-
-    .wdip-myfxbook .google-visualization-controls-slider-horizontal{
-        max-width: none;
-        width: 50%;
-    }
+.wdip-myfxbook-chart .chart-range-control .label-control {
+    display: inline-block;
+    font-weight: bold;
+    color: rgba(68, 149, 204, 0.85);
 }
 
-/* Small Devices, Tablets */
-@media only screen and (max-width: 768px) {
-    .wdip-myfxbook {
-        max-width: none;
-        width: 100%;
-    }
+.wdip-myfxbook-chart .chart-range-control .label-control.left {
+    margin-right: 10px;
+}
 
-    .wdip-myfxbook .filter{
-        padding-left: 2%;
-        width: 100%;
-    }
+.wdip-myfxbook-chart .chart-range-control .label-control.right {
+    margin-left: 10px;
+}
 
-    .wdip-myfxbook .google-visualization-controls-label{
-        display: none;
-    }
-
-    .wdip-myfxbook .google-visualization-controls-slider-horizontal{
-        max-width: none;
-        width: 50%;
-    }
+.wdip-myfxbook-chart .chart-range-control .slider-control {
+    display: inline-block;
+    width: 200px;
 }
 
 /* Extra Small Devices, Phones */
 @media only screen and (max-width: 480px) {
-    .wdip-myfxbook {
-        max-width: none;
-        width: 100%;
-    }
-
-    .wdip-myfxbook .filter{
-        padding-left: 2%;
-        width: 100%;
-    }
-
-    .wdip-myfxbook .google-visualization-controls-label{
+    .wdip-myfxbook-chart .chart-range-control .label-control {
         display: none;
-    }
-
-    .wdip-myfxbook .google-visualization-controls-slider-horizontal{
-        max-width: none;
-        width: 50%;
     }
 }
 
@@ -99,13 +59,13 @@
     padding: 20px;
 }
 
-.generation-fields label{
+.generation-fields label {
     font-weight: bold;
     display: inline-block;
     width: 150px;
 }
 
-.generation-fields label span{
+.generation-fields label span {
     color: darkred;
 }
 

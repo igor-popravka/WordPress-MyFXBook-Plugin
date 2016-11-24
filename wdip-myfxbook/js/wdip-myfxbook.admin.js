@@ -9,7 +9,6 @@ jQuery(document).ready(function ($) {
                 switch (nm) {
                     case 'width':
                     case 'height':
-                    case 'fontsize':
                         vl = parseInt(vl, 10);
                         vl = isNaN(vl) ? "" : vl;
                         break;
@@ -23,6 +22,14 @@ jQuery(document).ready(function ($) {
 
         result += '] Replace this text or remove It [/myfxbook]';
         $('.generation-result textarea').val(result);
+    });
+
+    $('#filter').click(function () {
+        $(this).val(null);
+
+        if ($(this).is(':checked')) {
+            $(this).val(1);
+        }
     });
 
 });

@@ -46,111 +46,67 @@ class WDIP_MyFXBook_Plugin {
     }
 
     public function applyShortCode($attr = [], $content = null) {
-        if (!isset($attr['method']) || !isset($attr['id'])) return $content;
+        if (!isset($attr['type']) || !isset($attr['id'])) return $content;
 
-        $chart = isset($attr['chart']) ? ucfirst($attr['chart']) . 'Chart' : 'LineChart';
-        $id = md5("{$attr['method']}-{$attr['id']}-{$chart}");
-        $options = ['hAxis' => ['format' => 'MMM, yy',], 'vAxis' => []];
-        foreach (['title', 'height', 'width', 'bgcolor', 'fontsize', 'gridcolor'] as $nm) {
-            if (isset($attr[$nm])) {
-                switch ($nm) {
-                    case 'bgcolor':
-                        $options['backgroundColor'] = $attr[$nm];
-                        break;
-                    case 'gridcolor':
-                        $options['hAxis']['gridlines'] = ['color' => $attr[$nm]];
-                        $options['vAxis']['gridlines'] = ['color' => $attr[$nm]];
-                        break;
-                    default:
-                        $options[$nm] = $attr[$nm];
-                }
-            }
-        }
-
-        if ($attr['chart'] == 'column') {
-            $options['isStacked'] = true;
-            $options['legend'] = ['position' => 'top', 'maxLines' => 2];
-        }
-
-        $style = '';
-        foreach (['height', 'width', 'bgcolor'] as $nm) {
-            if (isset($attr[$nm])) {
-                switch ($nm) {
-                    case 'bgcolor':
-                        $style .= "background-color:{$attr[$nm]}; ";
-                        break;
-                    default:
-                        $style .= "{$nm}:{$attr[$nm]}px; ";
-                }
-            }
-        }
+        $id = md5("{$attr['type']}-{$attr['id']}");
+        $options = [
+            'type' => $attr['type'],
+            'data' => [],
+            'title' => !empty($attr['title']) ? $attr['title'] : null,
+            'height' => !empty($attr['height']) ? $attr['height'] : null,
+            'width' => !empty($attr['width']) ? $attr['width'] : null,
+            'bgcolor' => !empty($attr['bgcolor']) ? $attr['bgcolor'] : null,
+            'gridcolor' => !empty($attr['gridcolor']) ? $attr['gridcolor'] : null,
+            'filter' => !empty($attr['filter']) ? $attr['filter'] : 0
+        ];
 
         ob_start();
 
         echo $content;
 
-        switch ($attr['method']) {
-            case 'get-daily-gain':
-            case 'get-data-daily':
-                $data = $attr['method'] == 'get-daily-gain' ? $this->getDataDailyGain($attr['id']) : $this->getDataDaily($attr['id']);
-                ?>
-                <div id="<?= $id; ?>" class="wdip-myfxbook" style="<?= $style; ?>">
-                    <div id="filter-<?= $id; ?>" class="filter"></div>
-                    <div id="chart-<?= $id; ?>"></div>
-                </div>
-                <script>
-                    /* <![CDATA[ */
-                    if (typeof wdip_myfxbook_options == 'undefined') {
-                        var wdip_myfxbook_options = [];
-                    }
-
-                    wdip_myfxbook_options.push({
-                        chart: "<?= $chart; ?>",
-                        id: "<?= $id; ?>",
-                        data: function ($) {
-                            var dt = <?= json_encode($data); ?>;
-                            $(dt.rows).each(function (i, r) {
-                                r.c[0].v = new Date(r.c[0].v);
-                                dt.rows[i] = r;
-                            });
-                            return dt;
-                        },
-                        options: <?= json_encode($options); ?>
-                    });
-                    /* ]]> */
-                </script>
-                <?php
-
-                break;
-            case 'get-custom-widget':
-                $op_rg = get_option(self::OPTIONS_NAME);
-
-                echo (!empty($op_rg['api_session']) && !empty($attr['id'])) ? sprintf('<img style="user-select: none; cursor: zoom-in;" src="https://www.myfxbook.com/api/get-custom-widget.png?%s" />', build_query([
-                    'session' => $op_rg['api_session'],
-                    'id' => $attr['id'],
-                    'width' => isset($attr['width']) ? intval($attr['width']) : null,
-                    'height' => isset($attr['height']) ? intval($attr['height']) : null,
-                    'bgColor' => isset($attr['bgcolor']) ? trim($attr['bgcolor'], '#') : 'ffffff',
-                    'chartbgc' => isset($attr['bgcolor']) ? trim($attr['bgcolor'], '#') : 'ffffff',
-                    'gridColor' => isset($attr['gridcolor']) ? trim($attr['gridcolor'], '#') : 'BDBDBD',
-                    'lineColor' => '00CB05',
-                    'barColor' => 'FF8D0A',
-                    'fontColor' => '000000',
-                    'bart' => 1,
-                    'linet' => 0,
-                    'title' => isset($attr['title']) ? $attr['title'] : '',
-                    'titles' => 20,
-                ])) : '';
-
+        if ($attr['type'] == 'get-daily-gain') {
+            $options['data'] = $this->getDataDailyGain($attr['id']);
+        } else if ($attr['type'] == 'get-data-daily') {
+            $options['data'] = $this->getDataDaily($attr['id']);
         }
+
+        ?>
+        <div id="<?= $id; ?>" class="wdip-myfxbook-chart"></div>
+        <script>
+            /* <![CDATA[ */
+            if (typeof WDIPMyFxBook == 'undefined') {
+                var WDIPMyFxBook = new (function () {
+                    var options = [];
+                    return {
+                        add: function (id, opt) {
+                            options.push({
+                                id: id,
+                                opt: opt
+                            });
+                        },
+                        each: function (callbak) {
+                            for (var i in options) {
+                                var o = options[i];
+                                callbak(o.id, o.opt);
+                            }
+                        }
+                    }
+                })();
+            }
+            WDIPMyFxBook.add("<?= $id; ?>", <?= json_encode($options); ?>);
+            /* ]]> */
+        </script>
+        <?php
 
         return ob_get_clean();
     }
 
     public function initEnqueueScripts() {
-        wp_enqueue_script('google-charts', 'https://www.gstatic.com/charts/loader.js');
-        wp_enqueue_script('wdip-myfxbook', plugins_url('/js/wdip-myfxbook.js', __FILE__), ['jquery', 'google-charts']);
-        wp_enqueue_style('wdip-myfxbook', plugins_url('/css/wdip-myfxbook.css', __FILE__));
+        wp_enqueue_script('highcharts', 'http://code.highcharts.com/highcharts.js');
+        wp_enqueue_script('wdip-myfxbook-chats', plugins_url('/js/wdip-myfxbook.chats.js', __FILE__), ['jquery', 'jquery-ui-slider', 'highcharts']);
+
+        wp_enqueue_style('jquery-ui-slider-css', '//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css');
+        wp_enqueue_style('wdip-myfxbook-css', plugins_url('/css/wdip-myfxbook.css', __FILE__));
     }
 
     public function initAdminEnqueueScripts() {
@@ -199,18 +155,10 @@ class WDIP_MyFXBook_Plugin {
                             </select>
                         </p>
                         <p>
-                            <label for="method-list"><span>*</span> Method:</label>
-                            <select name="method" id="method-list" class="attr-field">
+                            <label for="type-list"><span>*</span> Type:</label>
+                            <select name="type" id="type-list" class="attr-field">
                                 <option value="get-daily-gain">Get Daily Gain</option>
-                                <option value="get-custom-widget">Get Custom widget</option>
                                 <option value="get-data-daily">Get Data Daily</option>
-                            </select>
-                        </p>
-                        <p>
-                            <label for="chart-list">Chart type:</label>
-                            <select name="chart" id="chart-list" class="attr-field">
-                                <option value="line">Line</option>
-                                <option value="column">Column</option>
                             </select>
                         </p>
                         <p>
@@ -234,8 +182,8 @@ class WDIP_MyFXBook_Plugin {
                             <input name="gridcolor" id="gridColor" type="text" value="" class="attr-field"/>
                         </p>
                         <p>
-                            <label for="fontsize">Font size:</label>
-                            <input name="fontsize" id="fontsize" type="text" value="" class="attr-field"/>
+                            <label for="filter">Use filter:</label>
+                            <input name="filter" id="filter" type="checkbox" value="1" checked class="attr-field"/>
                         </p>
                     </fieldset>
                 </div>
@@ -393,100 +341,83 @@ class WDIP_MyFXBook_Plugin {
             if (!empty($response)) return $response;
         }
 
-        add_settings_error(
-            'myfxbook-api-request-error',
-            'myfxbook-api-request-error',
-            __('Bad API request', self::OPTIONS_PAGE)
-        );
         return null;
     }
 
     private function getDataDailyGain($id) {
-        static $table = [];
+        $op_rg = get_option(self::OPTIONS_NAME);
+        $result = $this->requestAPI('get-daily-gain.json', [
+            'session' => $op_rg['api_session'],
+            'id' => $id,
+            'start' => '0-0-0',
+            'end' => (new \DateTime())->format('Y-m-d')
+        ]);
 
-        if (!isset($table[$id])) {
-            $table[$id] = [];
-            $op_rg = get_option(self::OPTIONS_NAME);
-            $result = $this->requestAPI('get-daily-gain.json', [
-                'session' => $op_rg['api_session'],
-                'id' => $id,
-                'start' => '0-0-0',
-                'end' => (new \DateTime())->format('Y-m-d')
-            ]);
+        $table = [];
 
-            $table[$id] = [
-                'cols' => [
-                    ['id' => 'date', 'label' => 'Date', 'type' => 'date'],
-                    ['id' => 'value', 'label' => 'Value', 'type' => 'number'],
-                    ['id' => 'profit', 'label' => 'Profit', 'type' => 'number'],
-                ],
-                'rows' => []
-            ];
+        if (!empty($result->dailyGain)) {
+            $daily_gain = array_map(function ($i) {
+                return $i[0];
+            }, $result->dailyGain);
 
-            if (!empty($result->dailyGain)) {
-                $daily_gain = array_map(function ($i) {
-                    return $i[0];
-                }, $result->dailyGain);
-
-                foreach ($daily_gain as $item) {
-                    $table[$id]['rows'][] = [
-                        'c' => [
-                            ['v' => $item->date],
-                            ['v' => floatval($item->value)],
-                            ['v' => floatval($item->profit)]
-                        ]
-                    ];
+            $group_data = [];
+            foreach ($daily_gain as $item) {
+                $date = (new \DateTime())->createFromFormat('m/d/Y', $item->date);
+                $group_name = $date->format('m/1/Y');
+                if (!isset($group_data[$group_name])) {
+                    $group_data[$group_name] = [];
                 }
+
+                $group_data[$group_name][] = floatval($item->profit);
+            }
+
+            foreach ($group_data as $x => $y) {
+                $table[] = [
+                    'x' => $x,
+                    'y' => round(array_sum($y) / count($y), 2)
+                ];
             }
         }
 
-        return $table[$id];
+        return $table;
     }
 
     private function getDataDaily($id) {
-        static $table = [];
+        $op_rg = get_option(self::OPTIONS_NAME);
+        $result = $this->requestAPI('get-data-daily.json', [
+            'session' => $op_rg['api_session'],
+            'id' => $id,
+            'start' => '0-0-0',
+            'end' => (new \DateTime())->format('Y-m-d')
+        ]);
 
-        if (!isset($table[$id])) {
-            $table[$id] = [];
-            $op_rg = get_option(self::OPTIONS_NAME);
-            $result = $this->requestAPI('get-data-daily.json', [
-                'session' => $op_rg['api_session'],
-                'id' => $id,
-                'start' => '0-0-0',
-                'end' => (new \DateTime())->format('Y-m-d')
-            ]);
+        $table = [];
 
-            $table[$id] = [
-                'cols' => [
-                    ['id' => 'date', 'label' => 'Date', 'type' => 'date'],
-                    ['id' => 'balance', 'label' => 'Balance', 'type' => 'number'],
-                    ['id' => 'profit', 'label' => 'Profit', 'type' => 'number'],
-                    ['id' => 'pips', 'label' => 'Pips', 'type' => 'number'],
-                    ['id' => 'lots', 'label' => 'Lots', 'type' => 'number']
-                ],
-                'rows' => []
-            ];
+        if (!empty($result->dataDaily)) {
+            $daily_gain = array_map(function ($i) {
+                return $i[0];
+            }, $result->dataDaily);
 
-            if (!empty($result->dataDaily)) {
-                $daily_gain = array_map(function ($i) {
-                    return $i[0];
-                }, $result->dataDaily);
-
-                foreach ($daily_gain as $item) {
-                    $table[$id]['rows'][] = [
-                        'c' => [
-                            ['v' => $item->date],
-                            ['v' => floatval($item->balance)],
-                            ['v' => floatval($item->profit)],
-                            ['v' => floatval($item->pips)],
-                            ['v' => floatval($item->lots)]
-                        ]
-                    ];
+            $group_data = [];
+            foreach ($daily_gain as $item) {
+                $date = (new \DateTime())->createFromFormat('m/d/Y', $item->date);
+                $group_name = $date->format('m/1/Y');
+                if (!isset($group_data[$group_name])) {
+                    $group_data[$group_name] = [];
                 }
+
+                $group_data[$group_name][] = floatval($item->profit);
+            }
+
+            foreach ($group_data as $x => $y) {
+                $table[] = [
+                    'x' => $x,
+                    'y' => round(array_sum($y) / count($y), 2)
+                ];
             }
         }
 
-        return $table[$id];
+        return $table;
     }
 
     private function isSessionSet() {
