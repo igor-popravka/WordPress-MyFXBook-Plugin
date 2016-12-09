@@ -1,5 +1,23 @@
-.wdip-myfxbook-chart .chart-range-control {
-    margin: 20px 0 20px 40px;
+.wdip-myfxbook-chart .chart-range-control, .wdip-myfxbook-chart .chart-button-control {
+    display: inline-block;
+    margin: 1% 0;
+}
+
+.wdip-myfxbook-chart .chart-button-control .button-months{
+    border-width: 1px;
+    border-radius: 5px;
+    padding: 2px 5px;
+    background-color: rgba(68, 149, 204, 0.85);
+    color: #ffffff;
+    margin-bottom: 0;
+}
+
+.wdip-myfxbook-chart .chart-button-control .button-months:hover{
+    background-color: rgba(68, 149, 204, 0.55);
+}
+
+.wdip-myfxbook-chart .chart-button-control .button-months:active{
+    background-color: rgba(68, 149, 204, 1);
 }
 
 .wdip-myfxbook-chart .chart-range-control .label-control {

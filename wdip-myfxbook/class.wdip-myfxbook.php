@@ -29,6 +29,8 @@ class WDIP_MyFXBook_Plugin {
             add_action('admin_menu', $this->getCallback('initAdminMenu'));
             add_action('admin_init', $this->getCallback('initSettings'));
             add_action('admin_enqueue_scripts', $this->getCallback('initAdminEnqueueScripts'));
+            add_action('wp_ajax_nopriv_wdip-calculate', $this->getCallback('getCalculateResult'));
+            add_action('wp_ajax_wdip-calculate', $this->getCallback('getCalculateResult'));
         } else {
             add_action('wp_enqueue_scripts', $this->getCallback('initEnqueueScripts'));
             add_shortcode(self::SHORT_CODE_NAME, $this->getCallback('applyShortCode'));
@@ -46,9 +48,11 @@ class WDIP_MyFXBook_Plugin {
     }
 
     public function applyShortCode($attr = [], $content = null) {
-        if (!isset($attr['type']) || !isset($attr['id'])) return $content;
+        if (!isset($attr['type']) || !isset($attr['id']) || !$this->isSessionSet()) return $content;
 
-        $id = md5("{$attr['type']}-{$attr['id']}");
+        static $counter = 0;
+
+        $id = md5("{$attr['type']}-{$attr['id']}-" . $counter++);
         $options = [
             'type' => $attr['type'],
             'data' => [],
@@ -66,47 +70,29 @@ class WDIP_MyFXBook_Plugin {
 
         if ($attr['type'] == 'get-daily-gain') {
             $options['data'] = $this->getDataDailyGain($attr['id']);
+            require __DIR__ . '/views/wdip-myfxbook-chart.php';
         } else if ($attr['type'] == 'get-data-daily') {
             $options['data'] = $this->getDataDaily($attr['id']);
+            require __DIR__ . '/views/wdip-myfxbook-chart.php';
+        } else if ($attr['type'] == 'get-monthly-gain-loss') {
+            $options['data'] = $this->getMonthlyGainLoss($attr['id']);
+            require __DIR__ . '/views/wdip-myfxbook-chart.php';
+        } else if ($attr['type'] == 'get-calculator-form') {
+            $this->getCalculatorForm($attr['id']);
         }
-
-        ?>
-        <div id="<?= $id; ?>" class="wdip-myfxbook-chart"></div>
-        <script>
-            /* <![CDATA[ */
-            if (typeof WDIPMyFxBook == 'undefined') {
-                var WDIPMyFxBook = new (function () {
-                    var options = [];
-                    return {
-                        add: function (id, opt) {
-                            options.push({
-                                id: id,
-                                opt: opt
-                            });
-                        },
-                        each: function (callbak) {
-                            for (var i in options) {
-                                var o = options[i];
-                                callbak(o.id, o.opt);
-                            }
-                        }
-                    }
-                })();
-            }
-            WDIPMyFxBook.add("<?= $id; ?>", <?= json_encode($options); ?>);
-            /* ]]> */
-        </script>
-        <?php
 
         return ob_get_clean();
     }
 
     public function initEnqueueScripts() {
         wp_enqueue_script('highcharts', 'http://code.highcharts.com/highcharts.js');
-        wp_enqueue_script('wdip-myfxbook-chats', plugins_url('/js/wdip-myfxbook.chats.js', __FILE__), ['jquery', 'jquery-ui-slider', 'highcharts']);
+        wp_enqueue_script('wdip-myfxbook-chats', plugins_url('/js/wdip-myfxbook.chats.js', __FILE__), ['jquery', 'jquery-ui-slider', 'highcharts'], null);
+
+        wp_enqueue_script('jquery-ui-datepicker');
 
         wp_enqueue_style('jquery-ui-slider-css', '//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css');
         wp_enqueue_style('wdip-myfxbook-css', plugins_url('/css/wdip-myfxbook.css', __FILE__));
+        wp_enqueue_style('wdip-calculator-css', plugins_url('/css/wdip-calculator.css', __FILE__));
     }
 
     public function initAdminEnqueueScripts() {
@@ -159,6 +145,8 @@ class WDIP_MyFXBook_Plugin {
                             <select name="type" id="type-list" class="attr-field">
                                 <option value="get-daily-gain">Get Daily Gain</option>
                                 <option value="get-data-daily">Get Data Daily</option>
+                                <option value="get-monthly-gain-loss">Monthly Gain/Loss</option>
+                                <option value="get-calculator-form">Calculator Form</option>
                             </select>
                         </p>
                         <p>
@@ -182,7 +170,7 @@ class WDIP_MyFXBook_Plugin {
                             <input name="gridcolor" id="gridColor" type="text" value="" class="attr-field"/>
                         </p>
                         <p>
-                            <label for="filter">Use filter:</label>
+                            <label for="filter">Show custom filter:</label>
                             <input name="filter" id="filter" type="checkbox" value="1" checked class="attr-field"/>
                         </p>
                     </fieldset>
@@ -259,7 +247,7 @@ class WDIP_MyFXBook_Plugin {
         $options['accounts_list'] = [];
 
         if (!empty($options['login_field']) && !empty($options['password_field'])) {
-            $result = $this->requestAPI('login.json', [
+            $result = $this->requestAPI('api/login.json', [
                 'email' => $options['login_field'],
                 'password' => $options['password_field']
             ]);
@@ -272,7 +260,7 @@ class WDIP_MyFXBook_Plugin {
                 );
             } else {
                 $options['api_session'] = $result->session;
-                $result = $this->requestAPI('get-my-accounts.json', [
+                $result = $this->requestAPI('api/get-my-accounts.json', [
                     'session' => $options['api_session']
                 ]);
 
@@ -319,6 +307,11 @@ class WDIP_MyFXBook_Plugin {
     }
 
     public function delSettings() {
+        $options = get_option(self::OPTIONS_NAME);
+        $this->requestAPI('api/logout.json', [
+            'session' => $options['api_session']
+        ]);
+
         unregister_setting(self::OPTIONS_GROUP, self::OPTIONS_NAME);
         delete_option(self::OPTIONS_NAME);
     }
@@ -333,7 +326,7 @@ class WDIP_MyFXBook_Plugin {
      * @return null|\stdClass
      */
     private function requestAPI($action, array $params) {
-        $url = sprintf('https://www.myfxbook.com/api/%s?%s', $action, build_query($params));
+        $url = sprintf('https://www.myfxbook.com/%s?%s', $action, build_query($params));
         $response = wp_remote_get($url);
 
         if (wp_remote_retrieve_response_code($response) == 200) {
@@ -345,83 +338,232 @@ class WDIP_MyFXBook_Plugin {
     }
 
     private function getDataDailyGain($id) {
-        $op_rg = get_option(self::OPTIONS_NAME);
-        $result = $this->requestAPI('get-daily-gain.json', [
-            'session' => $op_rg['api_session'],
+        $options = get_option(self::OPTIONS_NAME);
+        $result = $this->requestAPI('api/get-data-daily.json', [
+            'session' => $options['api_session'],
             'id' => $id,
             'start' => '0-0-0',
             'end' => (new \DateTime())->format('Y-m-d')
         ]);
 
-        $table = [];
-
-        if (!empty($result->dailyGain)) {
-            $daily_gain = array_map(function ($i) {
-                return $i[0];
-            }, $result->dailyGain);
-
-            $group_data = [];
-            foreach ($daily_gain as $item) {
-                $date = (new \DateTime())->createFromFormat('m/d/Y', $item->date);
-                $group_name = $date->format('m/1/Y');
-                if (!isset($group_data[$group_name])) {
-                    $group_data[$group_name] = [];
-                }
-
-                $group_data[$group_name][] = floatval($item->profit);
-            }
-
-            foreach ($group_data as $x => $y) {
-                $table[] = [
-                    'x' => $x,
-                    'y' => round(array_sum($y) / count($y), 2)
-                ];
-            }
-        }
-
-        return $table;
-    }
-
-    private function getDataDaily($id) {
-        $op_rg = get_option(self::OPTIONS_NAME);
-        $result = $this->requestAPI('get-data-daily.json', [
-            'session' => $op_rg['api_session'],
-            'id' => $id,
-            'start' => '0-0-0',
-            'end' => (new \DateTime())->format('Y-m-d')
-        ]);
-
-        $table = [];
+        $series = [];
 
         if (!empty($result->dataDaily)) {
             $daily_gain = array_map(function ($i) {
                 return $i[0];
             }, $result->dataDaily);
 
-            $group_data = [];
+            $grouped_data = [];
             foreach ($daily_gain as $item) {
                 $date = (new \DateTime())->createFromFormat('m/d/Y', $item->date);
                 $group_name = $date->format('m/1/Y');
-                if (!isset($group_data[$group_name])) {
-                    $group_data[$group_name] = [];
+                if (!isset($grouped_data[$group_name])) {
+                    $grouped_data[$group_name] = ['profit' => [], 'balance' => []];
                 }
 
-                $group_data[$group_name][] = floatval($item->profit);
+                $grouped_data[$group_name]['profit'][] = floatval($item->profit);
+                $grouped_data[$group_name]['balance'][] = floatval($item->balance);
             }
 
-            foreach ($group_data as $x => $y) {
-                $table[] = [
+            $start_balance = $growth = null;
+            foreach ($grouped_data as $x => $y) {
+                if (!isset($start_balance)) {
+                    $start_balance = $growth = array_shift($y['balance']);
+                }
+
+                $series[] = [
                     'x' => $x,
-                    'y' => round(array_sum($y) / count($y), 2)
+                    'y' => round(($growth / $start_balance - 1) * 100, 2)
+                ];
+
+                $growth += array_sum($y['profit']);
+            }
+        }
+
+        return $series;
+    }
+
+    private function getDataDaily($id) {
+        $options = get_option(self::OPTIONS_NAME);
+        $result = $this->requestAPI('api/get-data-daily.json', [
+            'session' => $options['api_session'],
+            'id' => $id,
+            'start' => '0-0-0',
+            'end' => (new \DateTime())->format('Y-m-d')
+        ]);
+
+        $series = [];
+
+        if (!empty($result->dataDaily)) {
+            $daily_gain = array_map(function ($i) {
+                return $i[0];
+            }, $result->dataDaily);
+
+            $base_amount = $grow = null;
+            foreach ($daily_gain as $item) {
+                if (!isset($base_amount)) {
+                    $base_amount = $grow = $item->balance;
+                }
+
+                $series[] = [
+                    'x' => $item->date,
+                    'y' => round(($grow / $base_amount - 1) * 100, 2)
+                ];
+
+                $grow += $item->profit;
+            }
+        }
+
+        return $series;
+    }
+
+    private function getMonthlyGainLoss($id) {
+        $acc_info = $this->getAccountInfo($id);
+        $countYear = \DateTime::createFromFormat('m/d/Y H:i', $acc_info->firstTradeDate)->format('Y');
+        $endYear = (new \DateTime())->format('Y');
+        $endDate = (new \DateTime())->modify('last day of this month')->format('Y-m-d');
+        $series = $grouped_data = [];
+
+        while ($countYear <= $endYear) {
+            $result = $this->requestAPI('charts.json', [
+                'chartType' => 3,
+                'monthType' => 0,
+                'accountOid' => $id,
+                'startDate' => "{$countYear}-01-01",
+                'endDate' => $endDate
+            ]);
+
+            $keys = array_map(function ($val) {
+                $val = sprintf('01-%s', str_replace(' ', '-', $val));
+                return \DateTime::createFromFormat('d-M-Y', $val)->format('m/1/Y');
+            }, $result->categories);
+
+            $values = array_map(function ($item) {
+                return array_shift($item);
+            }, $result->series[0]->data);
+            $grouped_data = array_merge($grouped_data, array_combine($keys, $values));
+
+            $countYear++;
+        }
+
+        if (!empty($grouped_data)) {
+            foreach ($grouped_data as $x => $y) {
+                $series[] = [
+                    'x' => $x,
+                    'y' => $y
                 ];
             }
         }
 
-        return $table;
+        return $series;
     }
 
     private function isSessionSet() {
         $options = get_option(self::OPTIONS_NAME);
         return !empty($options['api_session']);
+    }
+
+    private function getAccountInfo($id) {
+        static $accounts = null;
+        if (!isset($accounts)) {
+            $options = get_option(self::OPTIONS_NAME);
+            $result = $this->requestAPI('api/get-my-accounts.json', [
+                'session' => $options['api_session']
+            ]);
+
+            $accounts = $result->accounts;
+        }
+
+        foreach ($accounts as $acc) {
+            if ($acc->id == $id) {
+                return $acc;
+            }
+        }
+
+        return null;
+    }
+
+    private function getCalculatorForm($id) {
+        $code = md5("get-calculator-form-{$id}-" . time());
+        $options = file_get_contents(__DIR__ . '/data/wdip-calculate.options.json');
+        $options = preg_replace("/[\r\n\s\t]/", '', $options);
+
+        require __DIR__ . '/views/wdip-calculator-form.php';
+    }
+
+    public function getCalculateResult() {
+        $fields = ['id' => null, 'start' => null, 'amount' => null, 'fee' => null];
+        $series = [
+            'categories' => [],
+            'total_amount_data' => [],
+            'fee_amount_data' => [],
+            'gain_amount_data' => []
+        ];
+        $response = [
+            'total_amount' => '$0.00',
+            'fee_amount' => '$0.00',
+            'gain_amount' => '$0.00',
+            'series' => $series
+        ];
+        foreach (array_keys($fields) as $nm) {
+            if (isset($_POST[$nm])) {
+                $fields[$nm] = $_POST[$nm];
+            } else {
+                wp_send_json_success($response);
+                return;
+            }
+        }
+
+        $options = get_option(self::OPTIONS_NAME);
+        $result = $this->requestAPI('api/get-data-daily.json', [
+            'session' => $options['api_session'],
+            'id' => $fields['id'],
+            'start' => $fields['start'],
+            'end' => (new \DateTime())->format('Y-m-d')
+        ]);
+
+        if (!empty($result->dataDaily)) {
+            $data = array_map(function ($i) {
+                return $i[0];
+            }, $result->dataDaily);
+
+            $balance = $growth = null;
+            foreach ($data as $item) {
+                $name = \DateTime::createFromFormat('m/d/Y', $item->date)->format('M, y');
+                if (!in_array($name, $series['categories'])) {
+                    $series['categories'][] = $name;
+                }
+                if (!isset($balance)) {
+                    $balance = $growth = floatval($item->balance);
+                }
+
+                $growth += $item->profit;
+            }
+
+            $count = count($series['categories']);
+            $start_amount = floatval($fields['amount']);
+            $fee = floatval($fields['fee']);
+            $start_fee = round($start_amount * $fee, 2);
+            $start_gain = $start_amount - $start_fee;
+
+            $total_amount = round(($growth / $balance) * $start_amount, 2);
+            $fee_amount = round($total_amount * $fee, 2);
+            $amount_step = round(($total_amount - $start_amount) / $count, 2);
+            $fee_step = round(($fee_amount - $start_fee) / $count, 2);
+            $gain_step = round(($total_amount - $fee_amount - $start_gain) / $count, 2);
+
+            for ($i = 1; $i <= $count; $i++) {
+                $series['total_amount_data'][] = round($start_amount + $i * $amount_step, 2);
+                $series['fee_amount_data'][] = round($start_fee + $i * $fee_step, 2);
+                $series['gain_amount_data'][] = round($start_gain + $i * $gain_step, 2);
+            }
+
+            $response['total_amount'] = '$' . $total_amount;
+            $response['fee_amount'] = '$' . $fee_amount;
+            $response['gain_amount'] = '$' . ($total_amount - $fee_amount);
+            $response['series'] = $series;
+        }
+
+        wp_send_json_success($response);
     }
 }

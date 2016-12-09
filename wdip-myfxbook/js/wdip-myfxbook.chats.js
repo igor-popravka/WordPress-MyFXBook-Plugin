@@ -1,21 +1,24 @@
 jQuery(document).ready(function ($) {
     if ((typeof WDIPMyFxBook != 'undefined') && !$.isEmptyObject(WDIPMyFxBook)) {
+        var oneMonthPoint = 1000 * 3600 * 24 * 30;
+
         WDIPMyFxBook.each(function (id, opt) {
-            var chart = Highcharts.chart(id, getChartOptions(opt));
+            var chart_options = getChartOptions(opt);
+            var chart = Highcharts.chart(id, chart_options);
 
             var min = null,
                 max = null,
                 context = $('#' + id);
 
-            $(opt.data).each(function (i, o) {
-                min = min || o.x;
-                max = max || o.x;
+            $(opt.data).each(function (i, r) {
+                min = min || r.x;
+                max = max || r.x;
 
-                min = Math.min(min, o.x);
-                max = Math.max(max, o.x);
+                min = Math.min(min, r.x);
+                max = Math.max(max, r.x);
             });
 
-            renderControlLabel(min, max, context);
+            renderControlLabel(min, max, context, chart);
 
             $(".slider-control", context).slider({
                 range: true,
@@ -26,14 +29,50 @@ jQuery(document).ready(function ($) {
                     renderControlLabel(ui.values[0], ui.values[1], context);
 
                     var dataRange = [];
-                    $(opt.data).each(function (i, o) {
-                        if (o.x >= ui.values[0] && o.x <= ui.values[1]) {
-                            dataRange.push(o);
+                    $(opt.data).each(function (i, r) {
+                        if (r.x >= ui.values[0] && r.x <= ui.values[1]) {
+                            dataRange.push(r);
                         }
                     });
+
                     chart.series[0].setData(dataRange);
                 }
             });
+
+            $(".button-months", context).each(function () {
+                $(this).click(function () {
+                    $(".button-months", context).each(function () {
+                        $(this).css("background-color", "rgba(68, 149, 204, 0.85)");
+                    });
+
+                    var role = $(this).attr('role'),
+                        from = false,
+                        to = max,
+                        dataRange = [];
+
+                    switch (role) {
+                        case 'last-6-months':
+                            from = to - (6 * oneMonthPoint);
+                            break;
+                        case 'last-12-months':
+                            from = to - (12 * oneMonthPoint);
+                    }
+                    
+                    $(opt.data).each(function (i, r) {
+                        if (from !== false) {
+                            if (r.x >= from && r.x <= to) {
+                                dataRange.push(r);
+                            }
+                        } else {
+                            dataRange.push(r);
+                        }
+                    });
+
+                    chart.series[0].setData(dataRange);
+
+                    $(this).css("background-color", "rgba(68, 149, 204, 1)");
+                });
+            })
         });
     }
 
@@ -41,22 +80,17 @@ jQuery(document).ready(function ($) {
         $(option.data).each(function (i, r) {
             var dt = new Date(r.x);
             r.x = Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate());
-            option.data[i] = r;
         });
 
+
         switch (option.type) {
-            case 'get-daily-gain':
+            case 'get-data-daily':
                 return {
                     lang: {
                         rangeSelectorZoom: ''
                     },
                     credits: {
-                        enabled: true,
-                        href: "https://www.myfxbook.com",
-                        text: "Source: myfxbook.com",
-                        position: {
-                            y: -10
-                        }
+                        enabled: false
                     },
                     chart: {
                         backgroundColor: option.bgcolor || null,
@@ -72,10 +106,10 @@ jQuery(document).ready(function ($) {
                     subtitle: {
                         text: ((typeof option.filter != 'undefined') && option.filter == 1) ? sliderHTMLOwner() : '',
                         useHTML: true,
-                        align: "left"
+                        align: "center"
                     },
                     tooltip: {
-                        valueSuffix: ' %'
+                        valueSuffix: '%'
                     },
                     xAxis: {
                         tickmarkPlacement: 'on',
@@ -83,7 +117,14 @@ jQuery(document).ready(function ($) {
                         gridLineColor: option.gridcolor || '#7A7F87',
                         gridLineDashStyle: 'dot',
                         type: 'datetime',
-                        tickInterval: 1000 * 3600 * 24 * 30 // 1 months
+                        tickInterval: 1000 * 3600 * 24,
+                        labels: {
+                            formatter: function () {
+                                var dt = new Date(this.value),
+                                    local = 'en-US';
+                                return dt.toLocaleDateString(local, {month: 'short', year: '2-digit', day: 'numeric'});
+                            }
+                        }
                     },
                     yAxis: {
                         gridLineColor: option.gridcolor || '#7A7F87',
@@ -103,15 +144,11 @@ jQuery(document).ready(function ($) {
                     plotOptions: {
                         areaspline: {
                             fillColor: {
-                                linearGradient: [0, 0, 0, 300],
+                                linearGradient: [0, 0, 0, 240],
                                 stops: [
                                     [0, Highcharts.getOptions().colors[0]],
                                     [1, Highcharts.Color(Highcharts.getOptions().colors[0]).setOpacity(0).get('rgba')]
                                 ]
-                            },
-                            marker: {
-                                radius: 4,
-                                enabled: true
                             },
                             lineWidth: 2,
                             states: {
@@ -126,22 +163,19 @@ jQuery(document).ready(function ($) {
                     },
                     series: [
                         {
-                            name: 'Profit',
+                            name: 'Growth',
                             color: Highcharts.getOptions().colors[0],
-                            data: option.data
+                            data: option.data,
+                            turboThreshold: 0
                         }
                     ]
                 };
                 break;
-            case 'get-data-daily':
+            case 'get-daily-gain':
+            case 'get-monthly-gain-loss':
                 return {
                     credits: {
-                        enabled: true,
-                        href: "https://www.myfxbook.com",
-                        text: "Source: myfxbook.com",
-                        position: {
-                            y: -10
-                        }
+                        enabled: false
                     },
                     chart: {
                         backgroundColor: option.bgcolor || null,
@@ -155,9 +189,9 @@ jQuery(document).ready(function ($) {
                         text: option.title || ''
                     },
                     subtitle: {
-                        text: ((typeof option.filter != 'undefined') && option.filter == 1) ? sliderHTMLOwner() : '',
+                        text: ((typeof option.filter != 'undefined') && option.filter == 1) ? buttonHTMLOwner() : '',
                         useHTML: true,
-                        align: "left"
+                        align: "right"
                     },
                     xAxis: {
                         tickmarkPlacement: 'on',
@@ -165,7 +199,7 @@ jQuery(document).ready(function ($) {
                         gridLineColor: option.gridcolor || '#7A7F87',
                         gridLineDashStyle: 'dot',
                         type: 'datetime',
-                        tickInterval: 1000 * 3600 * 24 * 30, // 1 months
+                        tickInterval: oneMonthPoint, // 1 months
                         crosshair: true
                     },
                     yAxis: {
@@ -180,59 +214,24 @@ jQuery(document).ready(function ($) {
                     legend: {
                         enabled: false
                     },
-                    rangeSelector: {
-                        selected: 1,
-                        inputEnabled: false,
-                        buttonTheme: {
-                            width: 100,
-                            height: 16,
-                            fill: '#2B303A',
-                            stroke: 'none',
-                            'stroke-width': 0,
-                            r: 5,
-                            style: {
-                                color: '#A0A0A0'
-                            },
-                            states: {
-                                hover: {},
-                                select: {
-                                    fill: '#5B73A3',
-                                    style: {
-                                        color: 'white'
-                                    }
-                                }
-                            }
-                        },
-                        buttons: [
-                            {
-                                type: 'month',
-                                count: 6,
-                                text: 'Last 6 months'
-                            },
-                            {
-                                type: 'year',
-                                count: 1,
-                                text: 'Last 12 months'
-                            },
-                            {
-                                type: 'all',
-                                text: 'All'
-                            }
-                        ]
-                    },
                     plotOptions: {
                         column: {
                             shadow: true,
-                            color: 'rgba(124, 181, 236, 0.7)',
                             borderRadius: 3,
-                            borderWidth: 0,
-                            negativeColor: 'rgba(255, 79, 79, 0.7)'
+                            borderWidth: 1
                         }
                     },
-                    series: [{
-                        name: 'Profit',
-                        data: option.data
-                    }]
+                    tooltip: {
+                        valueSuffix: '%'
+                    },
+                    series: [
+                        {
+                            name: 'Growth',
+                            data: option.data,
+                            color: 'rgba(124, 181, 236, 0.7)',
+                            negativeColor: 'rgba(255, 79, 79, 0.7)'
+                        }
+                    ]
                 };
                 break;
             default:
@@ -248,14 +247,28 @@ jQuery(document).ready(function ($) {
                 </div>';
     }
 
-    function renderControlLabel(min, max, context) {
-        var minDate = new Date(min),
-            maxDate = new Date(max),
-            locale = "en-us",
-            minMonth = minDate.toLocaleString(locale, {month: "short"}),
-            maxMonth = maxDate.toLocaleString(locale, {month: "short"});
+    function buttonHTMLOwner() {
+        return '<div class="chart-button-control">\
+                    <button class="button-months" role="last-6-months" >Last 6 months</button>\
+                    <button class="button-months" role="last-12-months" >Last 12 months</button>\
+                    <button class="button-months" role="all-months">All months</button>\
+                </div>';
+    }
 
-        $('.label-control.left', context).text(minMonth + ', ' + minDate.getUTCFullYear());
-        $('.label-control.right', context).text(maxMonth + ', ' + maxDate.getUTCFullYear());
+    function renderControlLabel(min, max, context, chart) {
+        if($('.label-control', context).length){
+            var minDate = new Date(min),
+                maxDate = new Date(max),
+                locale = "en-us",
+                minMonth = minDate.toLocaleDateString(locale, {month: 'short', year: '2-digit', day: 'numeric'}),
+                maxMonth = maxDate.toLocaleDateString(locale, {month: 'short', year: '2-digit', day: 'numeric'});
+
+            $('.label-control.left', context).text(minMonth);
+            $('.label-control.right', context).text(maxMonth);
+            
+            if(typeof chart != 'undefined'){
+                chart.redraw();
+            }
+        }
     }
 });

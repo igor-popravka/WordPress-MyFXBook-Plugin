@@ -1,0 +1,110 @@
+.wdip-myfxbook p {
+    margin: 0 0 3px 0;
+}
+
+.wdip-myfxbook .wdip-button {
+    margin: 0;
+    padding: 8px;
+    color: #000000;
+    border-radius: 3px;
+    border: solid 1px #8f9a9e;
+    background-color: rgba(230,230,230, 0.5);
+}
+
+.wdip-myfxbook .wdip-button:hover{
+    background-color: rgba(230,230,230, 0.9);
+}
+
+.wdip-myfxbook .wdip-button:active{
+    background-color: rgba(200,200,200, 0.9);
+}
+
+.wdip-myfxbook .wdip-calculator {
+    position: relative;
+    width: 250px;
+    background-color: #F6F6F6;
+    border: solid 1px #8f9a9e;
+    border-radius: 3px;
+}
+
+.wdip-myfxbook .wdip-graph-wrap {
+    display: none;
+    position: absolute;
+    top: -1px;
+    left: 252px;
+    width: 600px;
+    background-color: #ffffff;
+    border-right: solid 1px #8f9a9e;
+    border-top: solid 1px #8f9a9e;
+    border-bottom: solid 1px #8f9a9e;
+    border-radius: 3px;
+    padding: 10px;
+}
+
+/** Result block */
+.wdip-myfxbook .wdip-calculator .wdip-result {
+    margin: 10px;
+    padding: 10px;
+    border: solid 1px #8f9a9e;
+    background-color: #ffffff;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+.wdip-myfxbook .wdip-calculator .wdip-result label {
+    display: inline-block;
+    width: 100px;
+    font-weight: bold;
+    color: #8f9a9e;
+    margin-right: 10px;
+}
+
+.wdip-myfxbook .wdip-calculator .wdip-result .wdip-field {
+    font-weight: bold;
+    color: #2C7C91;
+}
+
+/** Inputs block */
+.wdip-myfxbook .wdip-calculator .wdip-inputs {
+    position: relative;
+    margin: 10px;
+    padding: 10px;
+    border: solid 1px #8f9a9e;
+    border-radius: 3px;
+}
+
+.wdip-myfxbook .wdip-calculator .wdip-inputs .wdip-field {
+    width: 100%;
+    margin: 0;
+    padding: 0 10px;
+    height: 34px;
+}
+
+/** Menu block */
+.wdip-myfxbook .wdip-calculator .wdip-menu {
+    height: 0;
+    margin: 10px;
+}
+
+.wdip-myfxbook .wdip-calculator .wdip-menu .wdip-button {
+    display: none;
+    height: 0;
+    float: right;
+    width: 34px;
+}
+
+@media only screen and (min-width: 850px) {
+    .wdip-myfxbook .wdip-calculator .wdip-menu .wdip-button {
+        display: inline;
+        height: 34px;
+    }
+    .wdip-myfxbook .wdip-calculator .wdip-menu{
+        height: 34px;
+    }
+}
+
+/* Calculate button */
+.wdip-myfxbook .wdip-button.wdip-calculate {
+    width: 100%;
+    margin: 20px 0 0 0;
+}
