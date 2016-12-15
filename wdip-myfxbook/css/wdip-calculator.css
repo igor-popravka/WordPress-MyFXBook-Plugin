@@ -90,7 +90,10 @@
     display: none;
     height: 0;
     float: right;
-    width: 34px;
+}
+
+.wdip-myfxbook .wdip-calculator .wdip-menu .wdip-button span.ui-icon {
+    display: inline-block;
 }
 
 @media only screen and (min-width: 850px) {

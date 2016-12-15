@@ -4,7 +4,7 @@ jQuery(document).ready(function ($) {
 
         $('.attr-field').each(function () {
             var vl = $(this).val();
-            if (vl.length) {
+            if (vl.length && !$(this).closest('p.grope').is(':hidden')) {
                 var nm = $(this).attr('name');
                 switch (nm) {
                     case 'width':
@@ -32,4 +32,14 @@ jQuery(document).ready(function ($) {
         }
     });
 
+    $('#type-list').change(function () {
+        $('p.grope').hide();
+        if ($(this).val() == 'get-calculator-form') {
+            $('p.grope.calculate').show();
+        } else {
+            $('p.grope.graph').show();
+        }
+    });
+
+    $('p.grope.calculate').hide();
 });

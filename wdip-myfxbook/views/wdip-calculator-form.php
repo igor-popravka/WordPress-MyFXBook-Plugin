@@ -16,7 +16,7 @@
                 </p>
             </div>
             <div class="wdip-menu">
-                <button class="wdip-button" title="Show graph"><span class="ui-icon ui-icon-signal"></span></button>
+                <button class="wdip-button">Show graph <span class="ui-icon ui-icon-signal"></span></button>
             </div>
             <div class="wdip-inputs">
                 <p>
@@ -30,8 +30,9 @@
                 <p>
                     <label>Performance fee:</label>
                     <select name="wdip_performance_fee" class="wdip-field">
-                        <option value="0.25">25%</option>
-                        <option value="0.3">30%</option>
+                        <?php foreach ($fee_list as $fee): ?>
+                            <option value="<?php echo floatval($fee/100); ?>"><?php echo $fee; ?>%</option>
+                        <?php endforeach; ?>
                     </select>
                 </p>
                 <p>
@@ -90,7 +91,7 @@
                     });
                 }
 
-                if(series){
+                if (series) {
                     chart.xAxis[0].setCategories(series.categories);
                     chart.series[0].setData(series.total_amount_data);
                     chart.series[1].setData(series.fee_amount_data);

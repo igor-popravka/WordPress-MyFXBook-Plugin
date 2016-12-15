@@ -14,6 +14,9 @@ class WDIP_MyFXBook_Plugin {
 
     private static $instance;
 
+    private static $session;
+    private static $accounts = [];
+
     private function __construct() {
     }
 
@@ -48,37 +51,42 @@ class WDIP_MyFXBook_Plugin {
     }
 
     public function applyShortCode($attr = [], $content = null) {
-        if (!isset($attr['type']) || !isset($attr['id']) || !$this->isSessionSet()) return $content;
-
-        static $counter = 0;
-
-        $id = md5("{$attr['type']}-{$attr['id']}-" . $counter++);
-        $options = [
-            'type' => $attr['type'],
-            'data' => [],
-            'title' => !empty($attr['title']) ? $attr['title'] : null,
-            'height' => !empty($attr['height']) ? $attr['height'] : null,
-            'width' => !empty($attr['width']) ? $attr['width'] : null,
-            'bgcolor' => !empty($attr['bgcolor']) ? $attr['bgcolor'] : null,
-            'gridcolor' => !empty($attr['gridcolor']) ? $attr['gridcolor'] : null,
-            'filter' => !empty($attr['filter']) ? $attr['filter'] : 0
-        ];
+        if (!isset($attr['type']) || !isset($attr['id'])) return $content;
 
         ob_start();
 
         echo $content;
 
-        if ($attr['type'] == 'get-daily-gain') {
-            $options['data'] = $this->getDataDailyGain($attr['id']);
-            require __DIR__ . '/views/wdip-myfxbook-chart.php';
-        } else if ($attr['type'] == 'get-data-daily') {
-            $options['data'] = $this->getDataDaily($attr['id']);
-            require __DIR__ . '/views/wdip-myfxbook-chart.php';
-        } else if ($attr['type'] == 'get-monthly-gain-loss') {
-            $options['data'] = $this->getMonthlyGainLoss($attr['id']);
-            require __DIR__ . '/views/wdip-myfxbook-chart.php';
-        } else if ($attr['type'] == 'get-calculator-form') {
-            $this->getCalculatorForm($attr['id']);
+        try {
+            switch ($attr['type']) {
+                case 'get-daily-gain':
+                case 'get-data-daily':
+                case 'get-monthly-gain-loss':
+                    static $counter = 0;
+
+                    $id = md5("{$attr['type']}-{$attr['id']}-" . $counter++);
+                    $options = [
+                        'type' => $attr['type'],
+                        'data' => [],
+                        'title' => !empty($attr['title']) ? $attr['title'] : null,
+                        'height' => !empty($attr['height']) ? $attr['height'] : null,
+                        'width' => !empty($attr['width']) ? $attr['width'] : null,
+                        'bgcolor' => !empty($attr['bgcolor']) ? $attr['bgcolor'] : null,
+                        'gridcolor' => !empty($attr['gridcolor']) ? $attr['gridcolor'] : null,
+                        'filter' => !empty($attr['filter']) ? $attr['filter'] : 0
+                    ];
+
+                    $method = $this->getMethodByCode($attr['type']);
+                    $options['data'] = $this->$method($attr['id']);
+                    if (!empty($options['data'])) {
+                        require __DIR__ . '/views/wdip-myfxbook-chart.php';
+                    }
+                    break;
+                case 'get-calculator-form':
+                    $method = $this->getMethodByCode($attr['type']);
+                    $this->$method($attr);
+            }
+        } catch (\Exception $e) {
         }
 
         return ob_get_clean();
@@ -92,11 +100,11 @@ class WDIP_MyFXBook_Plugin {
 
         wp_enqueue_style('jquery-ui-slider-css', '//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css');
         wp_enqueue_style('wdip-myfxbook-css', plugins_url('/css/wdip-myfxbook.css', __FILE__));
-        wp_enqueue_style('wdip-calculator-css', plugins_url('/css/wdip-calculator.css', __FILE__));
+        wp_enqueue_style('wdip-calculator-css', plugins_url('/css/wdip-calculator.css', __FILE__), null, null);
     }
 
     public function initAdminEnqueueScripts() {
-        wp_enqueue_script('wdip-myfxbook', plugins_url('/js/wdip-myfxbook.admin.js', __FILE__), ['jquery']);
+        wp_enqueue_script('wdip-myfxbook', plugins_url('/js/wdip-myfxbook.admin.js', __FILE__), ['jquery'], null);
         wp_enqueue_style('wdip-myfxbook', plugins_url('/css/wdip-myfxbook.css', __FILE__));
     }
 
@@ -122,23 +130,14 @@ class WDIP_MyFXBook_Plugin {
                 submit_button('Save Settings');
                 ?>
             </form>
-            <?
-            $options = get_option(self::OPTIONS_NAME);
-            $acc_list = $options['accounts_list'];
-
-            if ($this->isSessionSet()):
-                ?>
+            <? if ($this->getSession()): ?>
                 <h1>SortCode Generator</h1>
                 <div class="generation-fields">
                     <fieldset>
                         <legend>Attributes</legend>
                         <p>
                             <label for="account-list"><span>*</span> Account:</label>
-                            <select name="id" id="account-list" class="attr-field">
-                                <? foreach ($acc_list as $title => $value) : ?>
-                                    <option value="<?= $value; ?>"><?= $title; ?></option>
-                                <? endforeach; ?>
-                            </select>
+                            <? $this->renderAccountsList($this->getAccountsList()) ?>
                         </p>
                         <p>
                             <label for="type-list"><span>*</span> Type:</label>
@@ -149,29 +148,34 @@ class WDIP_MyFXBook_Plugin {
                                 <option value="get-calculator-form">Calculator Form</option>
                             </select>
                         </p>
-                        <p>
+                        <p class="grope graph">
                             <label for="title">Title:</label>
                             <input name="title" id="title" type="text" value="" class="attr-field"/>
                         </p>
-                        <p>
+                        <p class="grope graph">
                             <label for="height">Height:</label>
                             <input name="height" id="height" type="text" value="" class="attr-field"/>
                         </p>
-                        <p>
+                        <p class="grope graph">
                             <label for="width">Width:</label>
                             <input name="width" id="width" type="text" value="" class="attr-field"/>
                         </p>
-                        <p>
+                        <p class="grope graph">
                             <label for="bgcolor">Background color:</label>
                             <input name="bgcolor" id="bgcolor" type="text" value="" class="attr-field"/>
                         </p>
-                        <p>
+                        <p class="grope graph">
                             <label for="gridcolor">Grid color:</label>
                             <input name="gridcolor" id="gridColor" type="text" value="" class="attr-field"/>
                         </p>
-                        <p>
+                        <p class="grope graph">
                             <label for="filter">Show custom filter:</label>
                             <input name="filter" id="filter" type="checkbox" value="1" checked class="attr-field"/>
+                        </p>
+                        <p class="grope calculate">
+                            <label for="fee">Performance fee:</label>
+                            <input name="fee" id="fee" type="text" value="" class="attr-field"/><br/>
+                            <span class="description" style="margin-left: 155px;">Enter numbers (1-100) separated comma</span>
                         </p>
                     </fieldset>
                 </div>
@@ -243,39 +247,13 @@ class WDIP_MyFXBook_Plugin {
     }
 
     public function validOptionsData($options) {
-        $options['api_session'] = null;
-        $options['accounts_list'] = [];
-
-        if (!empty($options['login_field']) && !empty($options['password_field'])) {
-            $result = $this->requestAPI('api/login.json', [
-                'email' => $options['login_field'],
-                'password' => $options['password_field']
-            ]);
-
-            if (empty($result->session)) {
-                add_settings_error(
-                    'myfxbook-api-session-empty',
-                    'myfxbook-api-session-empty',
-                    __('Failed during authorization into <a href="https://www.myfxbook.com/api">https://www.myfxbook.com/api</a>', self::OPTIONS_PAGE)
-                );
-            } else {
-                $options['api_session'] = $result->session;
-                $result = $this->requestAPI('api/get-my-accounts.json', [
-                    'session' => $options['api_session']
-                ]);
-
-                if (empty($result->accounts)) {
-                    add_settings_error(
-                        'myfxbook-api-accounts-empty',
-                        'myfxbook-api-accounts-empty',
-                        __('Failed to get accounts list from <a href="https://www.myfxbook.com/api">https://www.myfxbook.com/api</a>', self::OPTIONS_PAGE)
-                    );
-                } else {
-                    foreach ($result->accounts as $acc) {
-                        $options['accounts_list']["{$acc->name} ({$acc->accountId})"] = $acc->id;
-                    }
-                }
-            }
+        $session = $this->getSession($options['login_field'], $options['password_field']);
+        if (empty($session)) {
+            add_settings_error(
+                'myfxbook-api-session-empty',
+                'myfxbook-api-session-empty',
+                __('Failed during authorization into <a href="https://www.myfxbook.com/api">https://www.myfxbook.com/api</a>', self::OPTIONS_PAGE)
+            );
         }
 
         return $options;
@@ -307,11 +285,6 @@ class WDIP_MyFXBook_Plugin {
     }
 
     public function delSettings() {
-        $options = get_option(self::OPTIONS_NAME);
-        $this->requestAPI('api/logout.json', [
-            'session' => $options['api_session']
-        ]);
-
         unregister_setting(self::OPTIONS_GROUP, self::OPTIONS_NAME);
         delete_option(self::OPTIONS_NAME);
     }
@@ -325,7 +298,7 @@ class WDIP_MyFXBook_Plugin {
      * @param array $params
      * @return null|\stdClass
      */
-    private function requestAPI($action, array $params) {
+    private function httpRequest($action, array $params) {
         $url = sprintf('https://www.myfxbook.com/%s?%s', $action, build_query($params));
         $response = wp_remote_get($url);
 
@@ -337,10 +310,9 @@ class WDIP_MyFXBook_Plugin {
         return null;
     }
 
-    private function getDataDailyGain($id) {
-        $options = get_option(self::OPTIONS_NAME);
-        $result = $this->requestAPI('api/get-data-daily.json', [
-            'session' => $options['api_session'],
+    private function getDailyGain($id) {
+        $result = $this->httpRequest('api/get-data-daily.json', [
+            'session' => $this->getSession(),
             'id' => $id,
             'start' => '0-0-0',
             'end' => (new \DateTime())->format('Y-m-d')
@@ -384,9 +356,8 @@ class WDIP_MyFXBook_Plugin {
     }
 
     private function getDataDaily($id) {
-        $options = get_option(self::OPTIONS_NAME);
-        $result = $this->requestAPI('api/get-data-daily.json', [
-            'session' => $options['api_session'],
+        $result = $this->httpRequest('api/get-data-daily.json', [
+            'session' => $this->getSession(),
             'id' => $id,
             'start' => '0-0-0',
             'end' => (new \DateTime())->format('Y-m-d')
@@ -419,76 +390,70 @@ class WDIP_MyFXBook_Plugin {
 
     private function getMonthlyGainLoss($id) {
         $acc_info = $this->getAccountInfo($id);
-        $countYear = \DateTime::createFromFormat('m/d/Y H:i', $acc_info->firstTradeDate)->format('Y');
-        $endYear = (new \DateTime())->format('Y');
-        $endDate = (new \DateTime())->modify('last day of this month')->format('Y-m-d');
         $series = $grouped_data = [];
 
-        while ($countYear <= $endYear) {
-            $result = $this->requestAPI('charts.json', [
-                'chartType' => 3,
-                'monthType' => 0,
-                'accountOid' => $id,
-                'startDate' => "{$countYear}-01-01",
-                'endDate' => $endDate
-            ]);
+        if (!empty($acc_info)) {
+            $countYear = \DateTime::createFromFormat('m/d/Y H:i', $acc_info->firstTradeDate)->format('Y');
+            $endYear = (new \DateTime())->format('Y');
+            $endDate = (new \DateTime())->modify('last day of this month')->format('Y-m-d');
 
-            $keys = array_map(function ($val) {
-                $val = sprintf('01-%s', str_replace(' ', '-', $val));
-                return \DateTime::createFromFormat('d-M-Y', $val)->format('m/1/Y');
-            }, $result->categories);
+            while ($countYear <= $endYear) {
+                $result = $this->httpRequest('charts.json', [
+                    'chartType' => 3,
+                    'monthType' => 0,
+                    'accountOid' => $id,
+                    'startDate' => "{$countYear}-01-01",
+                    'endDate' => $endDate
+                ]);
 
-            $values = array_map(function ($item) {
-                return array_shift($item);
-            }, $result->series[0]->data);
-            $grouped_data = array_merge($grouped_data, array_combine($keys, $values));
+                $keys = array_map(function ($val) {
+                    $val = sprintf('01-%s', str_replace(' ', '-', $val));
+                    return \DateTime::createFromFormat('d-M-Y', $val)->format('m/1/Y');
+                }, $result->categories);
 
-            $countYear++;
-        }
+                $values = array_map(function ($item) {
+                    return array_shift($item);
+                }, $result->series[0]->data);
+                $grouped_data = array_merge($grouped_data, array_combine($keys, $values));
 
-        if (!empty($grouped_data)) {
-            foreach ($grouped_data as $x => $y) {
-                $series[] = [
-                    'x' => $x,
-                    'y' => $y
-                ];
+                $countYear++;
+            }
+
+            if (!empty($grouped_data)) {
+                foreach ($grouped_data as $x => $y) {
+                    $series[] = [
+                        'x' => $x,
+                        'y' => $y
+                    ];
+                }
             }
         }
 
         return $series;
     }
 
-    private function isSessionSet() {
-        $options = get_option(self::OPTIONS_NAME);
-        return !empty($options['api_session']);
-    }
-
     private function getAccountInfo($id) {
-        static $accounts = null;
-        if (!isset($accounts)) {
-            $options = get_option(self::OPTIONS_NAME);
-            $result = $this->requestAPI('api/get-my-accounts.json', [
-                'session' => $options['api_session']
-            ]);
-
-            $accounts = $result->accounts;
-        }
-
-        foreach ($accounts as $acc) {
+        foreach ($this->getAccountsList() as $acc) {
             if ($acc->id == $id) {
                 return $acc;
             }
         }
-
         return null;
     }
 
-    private function getCalculatorForm($id) {
-        $code = md5("get-calculator-form-{$id}-" . time());
-        $options = file_get_contents(__DIR__ . '/data/wdip-calculate.options.json');
-        $options = preg_replace("/[\r\n\s\t]/", '', $options);
+    private function getCalculatorForm($attr) {
+        if ($this->getSession()) {
+            $id = $attr['id'];
+            $code = md5("get-calculator-form-{$attr['id']}-" . time());
+            $options = file_get_contents(__DIR__ . '/data/wdip-calculate.options.json');
+            $options = preg_replace("/[\r\n\s\t]/", '', $options);
+            $fee_list = explode(',', preg_replace("/[\s\t]/", '', $attr['fee']));
+            $fee_list = array_map(function ($item) {
+                return intval($item);
+            }, $fee_list);
 
-        require __DIR__ . '/views/wdip-calculator-form.php';
+            require __DIR__ . '/views/wdip-calculator-form.php';
+        }
     }
 
     public function getCalculateResult() {
@@ -514,9 +479,8 @@ class WDIP_MyFXBook_Plugin {
             }
         }
 
-        $options = get_option(self::OPTIONS_NAME);
-        $result = $this->requestAPI('api/get-data-daily.json', [
-            'session' => $options['api_session'],
+        $result = $this->httpRequest('api/get-data-daily.json', [
+            'session' => $this->getSession(),
             'id' => $fields['id'],
             'start' => $fields['start'],
             'end' => (new \DateTime())->format('Y-m-d')
@@ -565,5 +529,67 @@ class WDIP_MyFXBook_Plugin {
         }
 
         wp_send_json_success($response);
+    }
+
+    private function getSession($login = null, $password = null) {
+        $options = get_option(self::OPTIONS_NAME);
+        $login = isset($login) ? $login : (isset($options['login_field']) ? $options['login_field'] : null);
+        $password = isset($password) ? $password : (isset($options['password_field']) ? $options['password_field'] : null);
+
+        if (!isset(self::$session) && isset($login) && isset($password)) {
+            $result = $this->httpRequest('api/login.json', [
+                'email' => $login,
+                'password' => $password
+            ]);
+
+            if (!empty($result->session)) {
+                self::$session = $result->session;
+            } else {
+                self::$session = null;
+            }
+        }
+
+        return self::$session;
+    }
+
+    private function getAccountsList() {
+        if (empty(self::$accounts)) {
+            $result = $this->httpRequest('api/get-my-accounts.json', [
+                'session' => $this->getSession()
+            ]);
+
+            if (isset($result->accounts)) {
+                self::$accounts = $result->accounts;
+            } else {
+                self::$accounts = [];
+            }
+        }
+
+        return self::$accounts;
+    }
+
+    private function getMethodByCode($code) {
+        $units = explode('-', $code);
+
+        if (!empty($units)) {
+            array_walk($units, function (&$u, $key) {
+                if ($key > 1) {
+                    $u = ucfirst($u);
+                }
+            });
+            return implode('', $units);
+        }
+
+        return '';
+    }
+
+    private function renderAccountsList($accounts) {
+        ?>
+        <select name="id" id="account-list" class="attr-field">
+            <? foreach ($accounts as $acc) : ?>
+                <option value="<?= $acc->id; ?>"><?= $acc->name; ?> (<?= $acc->id; ?>)</option>
+            <? endforeach; ?>
+        </select>
+        <?php
     }
 }
