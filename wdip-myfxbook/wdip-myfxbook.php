@@ -2,7 +2,7 @@
 /**
  * @Plugin Name: MyFXBook Plugin
  * @Description: MyFXBook Plugin, which builds charts/graphs using the data from  API <a href="https://www.myfxbook.com/api">https://www.myfxbook.com/api</a>
- * @Version:     1.6.1
+ * @Version:     1.6.4
  * @Author:      Web Developer Igor P.
  * @Author URI:  https://www.upwork.com/freelancers/~010854a54a1811f970
  */

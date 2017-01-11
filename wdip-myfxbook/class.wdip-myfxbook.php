@@ -93,8 +93,9 @@ class WDIP_MyFXBook_Plugin {
     }
 
     public function initEnqueueScripts() {
-        wp_enqueue_script('highcharts', 'http://code.highcharts.com/highcharts.js');
+        wp_enqueue_script('highcharts', plugins_url('/js/highcharts.js', __FILE__));
         wp_enqueue_script('wdip-myfxbook-chats', plugins_url('/js/wdip-myfxbook.chats.js', __FILE__), ['jquery', 'jquery-ui-slider', 'highcharts'], null);
+        //wp_enqueue_script('wdip-myfxbook-calculator', plugins_url('/js/wdip-myfxbook.calculator.js', __FILE__), ['jquery', 'jquery-ui-dialog', 'jquery-ui-datepicker', 'highcharts'], null);
 
         wp_enqueue_script('jquery-ui-datepicker');
 
@@ -175,7 +176,8 @@ class WDIP_MyFXBook_Plugin {
                         <p class="grope calculate">
                             <label for="fee">Performance fee:</label>
                             <input name="fee" id="fee" type="text" value="" class="attr-field"/><br/>
-                            <span class="description" style="margin-left: 155px;">Enter numbers (1-100) separated comma</span>
+                            <span class="description"
+                                  style="margin-left: 155px;">Enter numbers (1-100) separated comma</span>
                         </p>
                     </fieldset>
                 </div>
@@ -311,44 +313,53 @@ class WDIP_MyFXBook_Plugin {
     }
 
     private function getDailyGain($id) {
-        $result = $this->httpRequest('api/get-data-daily.json', [
-            'session' => $this->getSession(),
-            'id' => $id,
-            'start' => '0-0-0',
-            'end' => (new \DateTime())->format('Y-m-d')
-        ]);
-
+        $acc_info = $this->getAccountInfo($id);
         $series = [];
 
-        if (!empty($result->dataDaily)) {
-            $daily_gain = array_map(function ($i) {
-                return $i[0];
-            }, $result->dataDaily);
+        if (!empty($acc_info)) {
+            $startDate = \DateTime::createFromFormat('m/d/Y H:i', $acc_info->firstTradeDate)->format('Y-m-d');
+            $endDate = (new \DateTime())->format('Y-m-d');
 
-            $grouped_data = [];
-            foreach ($daily_gain as $item) {
-                $date = (new \DateTime())->createFromFormat('m/d/Y', $item->date);
-                $group_name = $date->format('m/1/Y');
-                if (!isset($grouped_data[$group_name])) {
-                    $grouped_data[$group_name] = ['profit' => [], 'balance' => []];
+            $result = $this->httpRequest('charts.json', [
+                'chartType' => 1,
+                'accountOid' => $id,
+                'startDate' => $startDate,
+                'endDate' => $endDate,
+                'showPips' => false,
+                'showChange' => true,
+                'showMain' => true
+            ]);
+
+            if (isset($result->categories) && isset($result->series)) {
+                $array_keys = array_map(function ($vl) {
+                    $vl = preg_replace("/^([a-z]{3})\s(\d{2}),\s'(\d{2})$/i", "$2-$1-20$3", $vl);
+                    return \DateTime::createFromFormat('d-M-Y', $vl)->format('m/d/Y');
+                }, $result->categories);
+
+                $array_values = [];
+                foreach ($result->series as $item) {
+                    if ($item->name == 'Growth') {
+                        $array_values = $item->data;
+                        break;
+                    }
                 }
 
-                $grouped_data[$group_name]['profit'][] = floatval($item->profit);
-                $grouped_data[$group_name]['balance'][] = floatval($item->balance);
-            }
-
-            $start_balance = $growth = null;
-            foreach ($grouped_data as $x => $y) {
-                if (!isset($start_balance)) {
-                    $start_balance = $growth = array_shift($y['balance']);
+                $chart_data = array_combine($array_keys, $array_values);
+                $group_chart_data = [];
+                foreach ($chart_data as $key => $val) {
+                    $key = \DateTime::createFromFormat('m/d/Y', $key)->format('m/01/Y');
+                    if (!isset($group_chart_data[$key])) {
+                        $group_chart_data[$key] = [];
+                    }
+                    array_push($group_chart_data[$key], floatval($val));
                 }
 
-                $series[] = [
-                    'x' => $x,
-                    'y' => round(($growth / $start_balance - 1) * 100, 2)
-                ];
-
-                $growth += array_sum($y['profit']);
+                foreach ($group_chart_data as $x => $y) {
+                    $series[] = [
+                        'x' => $x,
+                        'y' => max($y)
+                    ];
+                }
             }
         }
 
@@ -356,32 +367,44 @@ class WDIP_MyFXBook_Plugin {
     }
 
     private function getDataDaily($id) {
-        $result = $this->httpRequest('api/get-data-daily.json', [
-            'session' => $this->getSession(),
-            'id' => $id,
-            'start' => '0-0-0',
-            'end' => (new \DateTime())->format('Y-m-d')
-        ]);
-
+        $acc_info = $this->getAccountInfo($id);
         $series = [];
 
-        if (!empty($result->dataDaily)) {
-            $daily_gain = array_map(function ($i) {
-                return $i[0];
-            }, $result->dataDaily);
+        if (!empty($acc_info)) {
+            $startDate = \DateTime::createFromFormat('m/d/Y H:i', $acc_info->firstTradeDate)->format('Y-m-d');
+            $endDate = (new \DateTime())->format('Y-m-d');
 
-            $base_amount = $grow = null;
-            foreach ($daily_gain as $item) {
-                if (!isset($base_amount)) {
-                    $base_amount = $grow = $item->balance;
+            $result = $this->httpRequest('charts.json', [
+                'chartType' => 1,
+                'accountOid' => $id,
+                'startDate' => $startDate,
+                'endDate' => $endDate,
+                'showPips' => false,
+                'showChange' => true,
+                'showMain' => true
+            ]);
+
+            if (isset($result->categories) && isset($result->series)) {
+                $array_keys = array_map(function ($vl) {
+                    $vl = preg_replace("/^([a-z]{3})\s(\d{2}),\s'(\d{2})$/i", "$2-$1-20$3", $vl);
+                    return \DateTime::createFromFormat('d-M-Y', $vl)->format('m/d/Y');
+                }, $result->categories);
+
+                $array_values = [];
+                foreach ($result->series as $item) {
+                    if ($item->name == 'Growth') {
+                        $array_values = $item->data;
+                        break;
+                    }
                 }
 
-                $series[] = [
-                    'x' => $item->date,
-                    'y' => round(($grow / $base_amount - 1) * 100, 2)
-                ];
-
-                $grow += $item->profit;
+                $chart_data = array_combine($array_keys, $array_values);
+                foreach ($chart_data as $x => $y) {
+                    $series[] = [
+                        'x' => $x,
+                        'y' => $y
+                    ];
+                }
             }
         }
 
@@ -405,17 +428,19 @@ class WDIP_MyFXBook_Plugin {
                     'startDate' => "{$countYear}-01-01",
                     'endDate' => $endDate
                 ]);
+                
+                if (isset($result->categories) && isset($result->series)) {
+                    $keys = array_map(function ($val) {
+                        $val = sprintf('01-%s', str_replace(' ', '-', $val));
+                        return \DateTime::createFromFormat('d-M-Y', $val)->format('m/1/Y');
+                    }, $result->categories);
 
-                $keys = array_map(function ($val) {
-                    $val = sprintf('01-%s', str_replace(' ', '-', $val));
-                    return \DateTime::createFromFormat('d-M-Y', $val)->format('m/1/Y');
-                }, $result->categories);
-
-                $values = array_map(function ($item) {
-                    return array_shift($item);
-                }, $result->series[0]->data);
-                $grouped_data = array_merge($grouped_data, array_combine($keys, $values));
-
+                    $values = array_map(function ($item) {
+                        return array_shift($item);
+                    }, $result->series[0]->data);
+                    $grouped_data = array_merge($grouped_data, array_combine($keys, $values));
+                }
+                
                 $countYear++;
             }
 
