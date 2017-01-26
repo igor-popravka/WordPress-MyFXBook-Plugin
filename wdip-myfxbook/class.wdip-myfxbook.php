@@ -94,10 +94,18 @@ class WDIP_MyFXBook_Plugin {
 
     public function initEnqueueScripts() {
         wp_enqueue_script('highcharts', plugins_url('/js/highcharts.js', __FILE__));
-        wp_enqueue_script('wdip-myfxbook-chats', plugins_url('/js/wdip-myfxbook.chats.js', __FILE__), ['jquery', 'jquery-ui-slider', 'highcharts'], null);
-        //wp_enqueue_script('wdip-myfxbook-calculator', plugins_url('/js/wdip-myfxbook.calculator.js', __FILE__), ['jquery', 'jquery-ui-dialog', 'jquery-ui-datepicker', 'highcharts'], null);
-
-        wp_enqueue_script('jquery-ui-datepicker');
+        wp_enqueue_script('wdip-myfxbook-chats', plugins_url('/js/wdip-myfxbook.chats.js', __FILE__), [
+            'jquery',
+            'jquery-ui-slider',
+            'highcharts'
+        ], null);
+        wp_enqueue_script('wdip-myfxbook-calculator', plugins_url('/js/wdip-myfxbook.calculator.js', __FILE__), [
+            'jquery',
+            'jquery-ui-dialog',
+            'jquery-ui-datepicker',
+            'jquery-ui-button',
+            'highcharts'
+        ], null);
 
         wp_enqueue_style('jquery-ui-slider-css', '//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css');
         wp_enqueue_style('wdip-myfxbook-css', plugins_url('/css/wdip-myfxbook.css', __FILE__));
@@ -312,12 +320,12 @@ class WDIP_MyFXBook_Plugin {
         return null;
     }
 
-    private function getDailyGain($id) {
+    private function getDailyGain($id, $start = null) {
         $acc_info = $this->getAccountInfo($id);
         $series = [];
 
         if (!empty($acc_info)) {
-            $startDate = \DateTime::createFromFormat('m/d/Y H:i', $acc_info->firstTradeDate)->format('Y-m-d');
+            $startDate = isset($start) ? $start : \DateTime::createFromFormat('m/d/Y H:i', $acc_info->firstTradeDate)->format('Y-m-d');
             $endDate = (new \DateTime())->format('Y-m-d');
 
             $result = $this->httpRequest('charts.json', [
@@ -428,7 +436,7 @@ class WDIP_MyFXBook_Plugin {
                     'startDate' => "{$countYear}-01-01",
                     'endDate' => $endDate
                 ]);
-                
+
                 if (isset($result->categories) && isset($result->series)) {
                     $keys = array_map(function ($val) {
                         $val = sprintf('01-%s', str_replace(' ', '-', $val));
@@ -440,7 +448,7 @@ class WDIP_MyFXBook_Plugin {
                     }, $result->series[0]->data);
                     $grouped_data = array_merge($grouped_data, array_combine($keys, $values));
                 }
-                
+
                 $countYear++;
             }
 
@@ -468,14 +476,11 @@ class WDIP_MyFXBook_Plugin {
 
     private function getCalculatorForm($attr) {
         if ($this->getSession()) {
-            $id = $attr['id'];
             $code = md5("get-calculator-form-{$attr['id']}-" . time());
-            $options = file_get_contents(__DIR__ . '/data/wdip-calculate.options.json');
-            $options = preg_replace("/[\r\n\s\t]/", '', $options);
-            $fee_list = explode(',', preg_replace("/[\s\t]/", '', $attr['fee']));
-            $fee_list = array_map(function ($item) {
-                return intval($item);
-            }, $fee_list);
+            $chart_options = file_get_contents(__DIR__ . '/data/wdip-calculate.options.json');
+            $chart_options = preg_replace("/[\r\n\s\t]/", '', $chart_options);
+
+            $admin_url = admin_url('admin-ajax.php');
 
             require __DIR__ . '/views/wdip-calculator-form.php';
         }
@@ -504,52 +509,33 @@ class WDIP_MyFXBook_Plugin {
             }
         }
 
-        $result = $this->httpRequest('api/get-data-daily.json', [
-            'session' => $this->getSession(),
-            'id' => $fields['id'],
-            'start' => $fields['start'],
-            'end' => (new \DateTime())->format('Y-m-d')
-        ]);
+        $result = $this->getDailyGain($fields['id'], $fields['start']);
 
-        if (!empty($result->dataDaily)) {
-            $data = array_map(function ($i) {
-                return $i[0];
-            }, $result->dataDaily);
-
-            $balance = $growth = null;
-            foreach ($data as $item) {
-                $name = \DateTime::createFromFormat('m/d/Y', $item->date)->format('M, y');
-                if (!in_array($name, $series['categories'])) {
-                    $series['categories'][] = $name;
-                }
-                if (!isset($balance)) {
-                    $balance = $growth = floatval($item->balance);
-                }
-
-                $growth += $item->profit;
-            }
-
-            $count = count($series['categories']);
-            $start_amount = floatval($fields['amount']);
+        if (!empty($result)) {
+            $amount = floatval($fields['amount']);
             $fee = floatval($fields['fee']);
-            $start_fee = round($start_amount * $fee, 2);
-            $start_gain = $start_amount - $start_fee;
+            $total_amount = $fee_amount = $gain = 0;
+            foreach ($result as $item) {
+                $name = \DateTime::createFromFormat('m/d/Y', $item['x'])->format('M, y');
 
-            $total_amount = round(($growth / $balance) * $start_amount, 2);
-            $fee_amount = round($total_amount * $fee, 2);
-            $amount_step = round(($total_amount - $start_amount) / $count, 2);
-            $fee_step = round(($fee_amount - $start_fee) / $count, 2);
-            $gain_step = round(($total_amount - $fee_amount - $start_gain) / $count, 2);
+                if (empty($series['categories'])) {
+                    $gain = 0;
+                } else {
+                    $gain = round($amount * ($item['y'] / 100), 2);
+                }
 
-            for ($i = 1; $i <= $count; $i++) {
-                $series['total_amount_data'][] = round($start_amount + $i * $amount_step, 2);
-                $series['fee_amount_data'][] = round($start_fee + $i * $fee_step, 2);
-                $series['gain_amount_data'][] = round($start_gain + $i * $gain_step, 2);
+                $total_amount = ($amount + $gain);
+                $fee_amount = round($gain * $fee, 2);
+
+                $series['categories'][] = $name;
+                $series['total_amount_data'][] = $total_amount;
+                $series['gain_amount_data'][] = $gain;
+                $series['fee_amount_data'][] = $fee_amount;
             }
 
             $response['total_amount'] = '$' . $total_amount;
             $response['fee_amount'] = '$' . $fee_amount;
-            $response['gain_amount'] = '$' . ($total_amount - $fee_amount);
+            $response['gain_amount'] = '$' . $gain;
             $response['series'] = $series;
         }
 

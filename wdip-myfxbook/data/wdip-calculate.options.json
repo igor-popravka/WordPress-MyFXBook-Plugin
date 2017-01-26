@@ -30,15 +30,18 @@
   "series": [
     {
       "name": "Total",
-      "data": []
-    },
-    {
-      "name": "Fee",
-      "data": []
+      "data": [],
+      "color": "#2D8AC7"
     },
     {
       "name": "Gain",
-      "data": []
+      "data": [],
+      "color": "#7CA821"
+    },
+    {
+      "name": "Fee",
+      "data": [],
+      "color": "#A94442"
     }
   ]
 }

@@ -1,111 +1,50 @@
-<div id="<?= $code; ?>" class="wdip-myfxbook">
-    <div class="wdip-calculator">
-        <div class="wdip-data-wrap">
-            <div class="wdip-result">
-                <p>
-                    <label>Total amount:</label>
-                    <span class="wdip-field" name="wdip_total_amount">$0.00</span>
-                </p>
-                <p>
-                    <label>Fee amount:</label>
-                    <span class="wdip-field" name="wdip_fee_amount">$0.00</span>
-                </p>
-                <p>
-                    <label>Gain amount:</label>
-                    <span class="wdip-field" name="wdip_gain_amount">$0.00</span>
-                </p>
-            </div>
-            <div class="wdip-menu">
-                <button class="wdip-button">Show graph <span class="ui-icon ui-icon-signal"></span></button>
-            </div>
-            <div class="wdip-inputs">
-                <p>
-                    <label>Amount:</label>
-                    <input type="text" name="wdip_amount" class="wdip-field">
-                </p>
-                <p>
-                    <label>Start date:</label>
-                    <input type="text" name="wdip_start_date" class="wdip-field">
-                </p>
-                <p>
-                    <label>Performance fee:</label>
-                    <select name="wdip_performance_fee" class="wdip-field">
-                        <?php foreach ($fee_list as $fee): ?>
-                            <option value="<?php echo floatval($fee/100); ?>"><?php echo $fee; ?>%</option>
-                        <?php endforeach; ?>
-                    </select>
-                </p>
-                <p>
-                    <button class="wdip-button wdip-calculate">Calculate</button>
-                    <input type="hidden" name="wdip_id" class="wdip-field" value="<?= $id; ?>">
-                </p>
-            </div>
+<div id="<?php echo $code; ?>" class="wdip-calc-wrapper">
+    <div class="wdip-result">
+        <div>
+            <label>Total amount:</label>
+            <span class="wdip-field-total" name="wdip_total_amount">$0.00</span>
         </div>
-        <div class="wdip-graph-wrap">
-            <div class="wdip-graph"></div>
+        <div>
+            <label>Gain amount:</label>
+            <span class="wdip-field-gain" name="wdip_gain_amount">$0.00</span>
+        </div>
+        <div>
+            <label>Fee amount:</label>
+            <span class="wdip-field-fee" name="wdip_fee_amount">$0.00</span>
         </div>
     </div>
+    <div class="wdip-menu">
+        <button class="show-graph">Show graph</button>
+    </div>
+    <div class="wdip-data">
+        <form>
+            <div class="wdip-field wdip-data-amount">
+                <label>Amount:</label>
+                <input type="text" name="amount" >
+            </div>
+            <div class="wdip-field wdip-data-date">
+                <label>Start date:</label>
+                <input type="text" name="start">
+            </div>
+            <div class="wdip-field wdip-data-fee">
+                <label>Performance fee:</label>
+                <select name="fee">
+                    <option value="0.25">25%</option>
+                </select>
+            </div>
+            <div class="wdip-field wdip-data-submit">
+                <input type="submit" value="Calculate">
+            </div>
+        </form>
+    </div>
 </div>
-
 <script>
     jQuery(document).ready(function ($) {
-        var context = $("#<?= $code; ?>"),
-            series = null,
-            options = JSON.parse('<?= $options; ?>'),
-            chart = Highcharts.chart($('.wdip-graph-wrap .wdip-graph', context)[0], options);
-
-        $(".wdip-field[name='wdip_start_date']", context).datepicker({
-            dateFormat: "yy-mm-dd",
-            changeMonth: true,
-            changeYear: true
-        });
-
-        $(".wdip-calculator", context).height($(".wdip-data-wrap", context).height() + 20);
-        chart.setSize(579, $(".wdip-data-wrap", context).height());
-
-        $('.wdip-button.wdip-calculate', context).click(function () {
-            $.post("<?= admin_url('admin-ajax.php'); ?>", {
-                action: 'wdip-calculate',
-                amount: $(".wdip-field[name='wdip_amount']", context).val(),
-                start: $(".wdip-field[name='wdip_start_date']", context).val(),
-                fee: $(".wdip-field[name='wdip_performance_fee']", context).val(),
-                id: $(".wdip-field[name='wdip_id']", context).val()
-            }, function (result) {
-                series = {categories: [], data: []};
-                if (result.success) {
-                    for (var name in result.data) {
-                        $(".wdip-result .wdip-field[name='wdip_" + name + "']", context).text(result.data[name]);
-                    }
-
-                    if (result.data.series.total_amount_data.length ||
-                        result.data.series.fee_amount_data.length ||
-                        result.data.series.gain_amount_data.length
-                    ) {
-                        series = result.data.series
-                    } else {
-                        series = null;
-                    }
-                } else {
-                    $(".wdip-result .wdip-field", context).each(function () {
-                        $(this).text('');
-                    });
-                }
-
-                if (series) {
-                    chart.xAxis[0].setCategories(series.categories);
-                    chart.series[0].setData(series.total_amount_data);
-                    chart.series[1].setData(series.fee_amount_data);
-                    chart.series[2].setData(series.gain_amount_data);
-                }
-            });
-        });
-
-        $('.wdip-menu .wdip-button', context).click(function () {
-            if ($('.wdip-graph-wrap', context).is(':hidden') && series) {
-                $('.wdip-graph-wrap', context).animate({width: "show"}, 1000);
-            } else {
-                $('.wdip-graph-wrap', context).animate({width: "hide"}, 1000);
-            }
+        $('#<?php echo $code; ?>').FXCalculator({
+            fee: [<?php echo $attr['fee']; ?>],
+            accID: '<?php echo $attr['id']; ?>',
+            url: '<?php echo $admin_url; ?>',
+            chart_options: JSON.parse('<?php echo $chart_options; ?>')
         });
     });
 </script>
