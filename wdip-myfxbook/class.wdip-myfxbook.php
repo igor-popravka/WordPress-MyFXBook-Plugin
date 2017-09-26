@@ -320,6 +320,7 @@ class WDIP_MyFXBook_Plugin {
         return null;
     }
 
+    /** todo use data: https://www.myfxbook.com/getAllYields.json?portfolioOid=248014 */
     private function getDailyGain($id, $start = null) {
         $acc_info = $this->getAccountInfo($id);
         $series = [];
@@ -374,6 +375,7 @@ class WDIP_MyFXBook_Plugin {
         return $series;
     }
 
+    /** todo use data: https://www.myfxbook.com/getAllYields.json?portfolioOid=248014 */
     private function getDataDaily($id) {
         $acc_info = $this->getAccountInfo($id);
         $series = [];
@@ -419,6 +421,7 @@ class WDIP_MyFXBook_Plugin {
         return $series;
     }
 
+    /** todo use data: https://www.myfxbook.com/getAllYields.json?portfolioOid=248014 */
     private function getMonthlyGainLoss($id) {
         $acc_info = $this->getAccountInfo($id);
         $series = $grouped_data = [];
